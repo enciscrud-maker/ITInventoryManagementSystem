@@ -134,6 +134,41 @@ td small { display: block; color: var(--muted); font-size: 9px; margin-top: 2px;
   position: absolute;
   right: 2px;
 }
+
+/* Goods In / Goods Out transaction workflow */
+.transaction-form-grid .full-span { grid-column: 1 / -1; }
+.transaction-assets-editor, .transaction-review { display: grid; gap: 14px; }
+.section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.section-heading > div { display: grid; gap: 3px; }
+.section-heading span, .table-subline { display: block; color: var(--muted); font-size: 10px; margin-top: 3px; }
+.asset-entry-table { border: 1px solid var(--border); border-radius: 8px; }
+.asset-entry-table table, .transaction-asset-summary table { min-width: 1080px; }
+.asset-entry-table td { vertical-align: top; min-width: 128px; }
+.asset-entry-table td:first-child, .asset-entry-table td:last-child { min-width: 48px; }
+.asset-entry-table .field { min-width: 120px; }
+.asset-entry-table .field > span { display: none; }
+.asset-entry-table .field textarea { min-height: 62px; }
+.transaction-asset-summary { border: 1px solid var(--border); border-radius: 8px; }
+.transaction-total { display: flex; justify-content: flex-end; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-top: 0; border-radius: 0 0 8px 8px; background: var(--surface-2); }
+.transaction-total span { color: var(--muted); }
+.document-list { display: flex; flex-wrap: wrap; gap: 7px; }
+.document-list span { padding: 6px 9px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-2); color: var(--muted); font-size: 10px; }
+.status-management { padding-top: 16px; border-top: 1px solid var(--border); }
+.status-control { display: grid; grid-template-columns: 1fr 1fr 2fr auto; align-items: end; gap: 12px; padding: 13px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+.status-control > div:first-child { align-self: center; display: flex; flex-direction: column; align-items: flex-start; gap: 7px; }
+.status-control > div:first-child > span { color: var(--muted); font-size: 10px; font-weight: 600; }
+.status-history { display: grid; gap: 9px; }
+.status-history article { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px 14px; padding: 11px 12px; border: 1px solid var(--border); border-radius: 8px; }
+.status-history article > div { display: flex; align-items: center; gap: 7px; }
+.status-history time, .status-history p { color: var(--muted); font-size: 10px; }
+.status-history p { grid-column: 2 / -1; }
+
+@media (max-width: 760px) {
+  .section-heading { align-items: flex-start; flex-direction: column; }
+  .status-control { grid-template-columns: 1fr; }
+  .status-history article { grid-template-columns: 1fr; }
+  .status-history p { grid-column: auto; }
+}
 .login-page {
   min-height: 100vh;
   display: grid;

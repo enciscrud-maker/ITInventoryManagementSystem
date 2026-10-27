@@ -22,6 +22,48 @@ export type Asset = {
   demo?: boolean
 }
 
+export type TransactionStatus = "In Progress" | "Completed"
+
+export type TransactionParty = {
+  name: string
+  nik: string
+  department: string
+}
+
+export type TransactionAttachment = {
+  id: string
+  name: string
+  size: number
+  type: string
+}
+
+export type TransactionAssetItem = {
+  rowId: string
+  assetId: string
+  itemName: string
+  quantity: number
+  serialNumber?: string
+  referenceNumber?: string
+  assetInformation?: string
+  condition?: string
+  remarks?: string
+  specifications?: string
+  justification?: string
+  duration?: string
+  purpose?: string
+}
+
+export type StatusHistoryEntry = {
+  id: string
+  previousStatus: TransactionStatus
+  newStatus: TransactionStatus
+  actorAccountId: string
+  actorName: string
+  actorNik: string
+  timestamp: string
+  notes?: string
+}
+
 export type Transaction = {
   id: string
   direction: "In" | "Out"
@@ -32,10 +74,21 @@ export type Transaction = {
   quantity: number
   location: string
   businessUnit: string
-  status: string
+  status: TransactionStatus
   user: string
   po?: string
   notes?: string
+  requestDate?: string
+  formIssueDate?: string
+  party?: TransactionParty
+  assets?: TransactionAssetItem[]
+  supportingDocuments?: TransactionAttachment[]
+  requestNumber?: string
+  approverName?: string
+  inventoryNotes?: string
+  statusHistory?: StatusHistoryEntry[]
+  inventoryAdjustmentApplied?: boolean
+  inventoryAdjustedAt?: string
 }
 
 export type AuditItem = {
@@ -289,7 +342,7 @@ export const demoTransactions: Transaction[] = [
     date: "2026-09-17",
     document: "GR-2026-0917",
     assetId: "CPCCBOTMBP00001",
-    type: "New unit",
+    type: "New Unit",
     quantity: 1,
     location: "Jakarta HQ",
     businessUnit: "MBP",
@@ -346,7 +399,7 @@ export const demoTransactions: Transaction[] = [
     quantity: 1,
     location: "Balikpapan Site",
     businessUnit: "BGN",
-    status: "Pending",
+    status: "In Progress",
     user: "Nina Larasati",
   },
 ]

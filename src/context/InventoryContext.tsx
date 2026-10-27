@@ -10,6 +10,8 @@ import {
   type Audit,
   type MasterItem,
   type Transaction,
+  type TransactionAssetItem,
+  type TransactionStatus,
 } from "../data/demoData"
 import {
   createCategoryRecord,
@@ -33,7 +35,12 @@ type State = {
   selectedAsset: Asset | null
   toast: string
   saveAsset: (asset: Asset) => void
-  saveTransaction: (tx: Transaction) => void
+  saveTransaction: (tx: Transaction) => boolean
+  updateTransactionStatus: (
+    id: string,
+    status: TransactionStatus,
+    notes?: string,
+  ) => boolean
   saveAudit: (audit: Audit) => void
   setBusinessUnit: (v: string) => void
   setTheme: (v: "light" | "dark") => void
@@ -55,11 +62,46 @@ const read = <T,>(key: string, fallback: T): T => {
   }
 }
 
+const normalizeTransaction = (transaction: Transaction): Transaction => {
+  const status: TransactionStatus =
+    transaction.status === "Completed" ? "Completed" : "In Progress"
+  const assetRows: TransactionAssetItem[] = transaction.assets?.length
+    ? transaction.assets
+    : [
+        {
+          rowId: `${transaction.id}-asset-1`,
+          assetId: transaction.assetId,
+          itemName: transaction.assetId,
+          quantity: transaction.quantity,
+          serialNumber: "",
+          referenceNumber: transaction.po ?? "",
+          remarks: transaction.notes ?? "",
+        },
+      ]
+
+  return {
+    ...transaction,
+    status,
+    assets: assetRows,
+    party: transaction.party ?? {
+      name: transaction.user,
+      nik: "",
+      department: "",
+    },
+    requestDate: transaction.requestDate ?? transaction.date,
+    formIssueDate: transaction.formIssueDate ?? transaction.date,
+    supportingDocuments: transaction.supportingDocuments ?? [],
+    statusHistory: transaction.statusHistory ?? [],
+  }
+}
+
 export function InventoryProvider({ children }: { children: React.ReactNode }) {
   const { currentUser } = useAuth()
   const [assets, setAssets] = useState(() => read("iti-assets", demoAssets))
   const [transactions, setTransactions] = useState(() =>
-    read("iti-transactions", demoTransactions),
+    read<Transaction[]>("iti-transactions", demoTransactions).map(
+      normalizeTransaction,
+    ),
   )
   const [audits, setAudits] = useState(() => read("iti-audits", demoAudits))
   const [master, setMaster] = useState(() =>
@@ -110,22 +152,92 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     )
     notify("Asset saved successfully")
   }
-  const saveTransaction = (tx: Transaction) => {
-    setTransactions((v) => [tx, ...v])
-    setAssets((v) =>
-      v.map((a) =>
-        a.id === tx.assetId
-          ? {
-              ...a,
-              location: tx.location || a.location,
-              businessUnit: tx.businessUnit || a.businessUnit,
-              condition: tx.type === "Disposal" ? "Disposal" : a.condition,
-              updatedAt: tx.date,
-            }
-          : a,
-      ),
+  const saveTransaction = (transaction: Transaction) => {
+    if (
+      transactions.some(
+        (existing) =>
+          existing.id === transaction.id ||
+          existing.document === transaction.document,
+      )
+    ) {
+      notify("Transaction was already submitted")
+      return false
+    }
+
+    const tx = normalizeTransaction(transaction)
+    const rows = tx.assets ?? []
+    const assetIds = rows.map((row) => row.assetId)
+    const invalidRows =
+      !rows.length ||
+      new Set(assetIds).size !== assetIds.length ||
+      rows.some((row) => {
+        const asset = assets.find((item) => item.id === row.assetId)
+        return (
+          !asset ||
+          !Number.isInteger(row.quantity) ||
+          row.quantity < 1 ||
+          (tx.direction === "Out" && row.quantity > asset.quantity)
+        )
+      })
+    if (invalidRows) {
+      notify("Transaction assets or stock quantities are no longer valid")
+      return false
+    }
+
+    setTransactions((value) => [tx, ...value])
+    setAssets((value) =>
+      value.map((asset) => {
+        const row = rows.find((item) => item.assetId === asset.id)
+        if (!row) return asset
+        return {
+          ...asset,
+          quantity:
+            tx.direction === "In"
+              ? asset.quantity + row.quantity
+              : Math.max(0, asset.quantity - row.quantity),
+          location: tx.location || asset.location,
+          businessUnit: tx.businessUnit || asset.businessUnit,
+          condition: tx.type === "Disposal" ? "Disposal" : asset.condition,
+          updatedAt: tx.date,
+        }
+      }),
     )
     notify(`${tx.direction === "In" ? "Goods-In" : "Goods-Out"} recorded`)
+    return true
+  }
+  const updateTransactionStatus = (
+    id: string,
+    status: TransactionStatus,
+    notes?: string,
+  ) => {
+    const transaction = transactions.find((item) => item.id === id)
+    if (!transaction || transaction.status === status) return false
+    const timestamp = new Date().toISOString()
+    setTransactions((value) =>
+      value.map((item) =>
+        item.id === id
+          ? {
+              ...item,
+              status,
+              statusHistory: [
+                {
+                  id: `HIS-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                  previousStatus: item.status,
+                  newStatus: status,
+                  actorAccountId: currentUser.id,
+                  actorName: currentUser.name,
+                  actorNik: currentUser.nik,
+                  timestamp,
+                  notes: notes?.trim() || undefined,
+                },
+                ...(item.statusHistory ?? []),
+              ],
+            }
+          : item,
+      ),
+    )
+    notify("Transaction status updated")
+    return true
   }
   const saveAudit = (audit: Audit) => {
     setAudits((v) =>
@@ -371,6 +483,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       toast,
       saveAsset,
       saveTransaction,
+      updateTransactionStatus,
       saveAudit,
       setBusinessUnit,
       setTheme,
@@ -387,6 +500,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     [
       assets,
       transactions,
+      currentUser,
       audits,
       master,
       businessUnit,

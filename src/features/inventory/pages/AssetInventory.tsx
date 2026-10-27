@@ -15,8 +15,8 @@ import {
   Trash2,
 } from "lucide-react"
 import { useInventory } from "@/context/InventoryContext"
-import type { Asset } from "@/data/demoData"
-import { downloadCsv, parseCsv, today } from "@/utils/helpers"
+import type { Asset, MasterItem } from "@/data/demoData"
+import { downloadCsv, today } from "@/utils/helpers"
 import { AssetForm } from "@/components/assets"
 import {
   Badge,
@@ -66,6 +66,218 @@ type SortState = {
   direction: 1 | -1
 }
 
+type AssetImportRow = Record<string, string>
+
+type AssetImportResult = {
+  row: number
+  source: AssetImportRow
+  asset?: Asset
+  errors: string[]
+}
+
+const importHeaders = [
+  "category_id",
+  "brand_id",
+  "group_id",
+  "type_id",
+  "asset_name",
+  "asset_type",
+  "asset_status",
+  "asset_prefix",
+] as const
+
+const cleanImportRow = (row: Record<string, unknown>): AssetImportRow =>
+  Object.fromEntries(
+    Object.entries(row).map(([key, value]) => [
+      key.trim().toLowerCase(),
+      String(value ?? "").trim(),
+    ]),
+  )
+
+const findMasterReference = (
+  items: MasterItem[],
+  value: string,
+  fields: Array<keyof MasterItem>,
+) => {
+  const target = value.trim().toLowerCase()
+  return items.find((item) =>
+    fields.some(
+      (field) => String(item[field] ?? "").trim().toLowerCase() === target,
+    ),
+  )
+}
+
+const resolveImportedCondition = (
+  value: string,
+  conditions: MasterItem[],
+) => {
+  const direct = findMasterReference(
+    conditions,
+    value,
+    ["id", "condition_id", "code", "status_code", "name", "condition_name"],
+  )
+  if (direct) return direct.name
+
+  const normalized = value.trim().toLowerCase()
+  if (
+    ["active", "aktif", "available", "tersedia", "borrowed", "dipinjam"].includes(
+      normalized,
+    )
+  )
+    return "Good"
+  if (
+    [
+      "repair",
+      "service",
+      "in repair",
+      "dalam perbaikan",
+      "damaged",
+      "rusak",
+    ].includes(normalized)
+  )
+    return "Damaged"
+  if (
+    ["disposal", "disposed", "inactive", "nonactive", "nonaktif"].includes(
+      normalized,
+    )
+  )
+    return "Disposal"
+  return ""
+}
+
+const mapImportRow = ({
+  row,
+  index,
+  assets,
+  master,
+  businessUnit,
+  prefixes,
+}: {
+  row: AssetImportRow
+  index: number
+  assets: Asset[]
+  master: Record<string, MasterItem[]>
+  businessUnit: string
+  prefixes: Map<string, number>
+}): AssetImportResult => {
+  const errors = importHeaders
+    .filter((header) => !row[header])
+    .map((header) => `missing ${header}`)
+  const categoryCode = row.category_id ?? ""
+  const groupCode = row.group_id ?? ""
+  const typeCode = row.type_id ?? ""
+  const brandCode = row.brand_id ?? ""
+  const assetStatus = row.asset_status ?? ""
+  const assetPrefix = row.asset_prefix ?? ""
+  const assetName = row.asset_name ?? ""
+  const assetType = row.asset_type ?? ""
+  const category = findMasterReference(master.categories, categoryCode, [
+    "id",
+    "category_id",
+    "code",
+    "category_code",
+  ])
+  const group = findMasterReference(master.groups, groupCode, [
+    "id",
+    "group_id",
+    "code",
+    "group_code",
+  ])
+  const type = findMasterReference(master.types, typeCode, [
+    "id",
+    "type_id",
+    "code",
+    "type_code",
+  ])
+  const brand = findMasterReference(master.brands, brandCode, [
+    "id",
+    "brand_id",
+    "code",
+    "brand_code",
+  ])
+  const condition = resolveImportedCondition(assetStatus, master.conditions)
+  const prefix = assetPrefix.trim().toUpperCase()
+
+  if (categoryCode && !category)
+    errors.push(`unknown category code "${categoryCode}"`)
+  if (groupCode && !group)
+    errors.push(`unknown group code "${groupCode}"`)
+  if (typeCode && !type) errors.push(`unknown type code "${typeCode}"`)
+  if (brandCode && !brand) errors.push(`unknown brand code "${brandCode}"`)
+  if (
+    category &&
+    group &&
+    group.category_id &&
+    group.category_id !== (category.category_id ?? category.id)
+  )
+    errors.push("group does not belong to the selected category")
+  if (
+    group &&
+    type &&
+    type.group_id &&
+    type.group_id !== (group.group_id ?? group.id)
+  )
+    errors.push("type does not belong to the selected group")
+  if (
+    type &&
+    brand?.type_id &&
+    brand.type_id !== (type.type_id ?? type.id)
+  )
+    errors.push("brand does not belong to the selected type")
+  if (assetStatus && !condition)
+    errors.push(`unsupported asset_status "${assetStatus}"`)
+  if (
+    prefix &&
+    assets.some((asset) => asset.id.trim().toUpperCase() === prefix)
+  )
+    errors.push(`duplicate asset_prefix "${assetPrefix}"`)
+  if (prefix && (prefixes.get(prefix) ?? 0) > 1)
+    errors.push(`duplicate asset_prefix "${assetPrefix}" in file`)
+
+  if (
+    errors.length ||
+    !category ||
+    !group ||
+    !type ||
+    !brand ||
+    !condition
+  )
+    return { row: index + 2, source: row, errors }
+
+  const defaultLocation = master.locations[0]?.name ?? "Unassigned"
+  const targetBusinessUnit =
+    businessUnit === "All Business Units" ? "MBP" : businessUnit
+  return {
+    row: index + 2,
+    source: row,
+    errors: [],
+    asset: {
+      id: prefix,
+      serial: `IMP-${prefix}`,
+      tag: prefix,
+      category: category.name,
+      group: group.name,
+      type: type.name,
+      brand: brand.name,
+      model: assetName,
+      location: defaultLocation,
+      businessUnit: targetBusinessUnit,
+      condition,
+      quantity: 1,
+      uom: "UNIT",
+      updatedAt: today(),
+      description: [
+        assetName,
+        assetType,
+        `Imported status: ${assetStatus}`,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+      demo: false,
+    },
+  }
+}
+
 export default function AssetInventory() {
   const {
     assets,
@@ -92,7 +304,9 @@ export default function AssetInventory() {
   const [moveOpen, setMoveOpen] = useState(false)
   const [moveLocation, setMoveLocation] = useState("")
   const [importOpen, setImportOpen] = useState(false)
-  const [importRows, setImportRows] = useState<Record<string, string>[]>([])
+  const [importRows, setImportRows] = useState<AssetImportRow[]>([])
+  const [importFileName, setImportFileName] = useState("")
+  const [importFileError, setImportFileError] = useState("")
   const filterFields = [
     "category",
     "group",
@@ -157,48 +371,59 @@ export default function AssetInventory() {
   const isVisible = (name: string) => visible.includes(name)
   const readFile = async (file?: File) => {
     if (!file) return
-    setImportRows(parseCsv(await file.text()) as Record<string, string>[])
-  }
-  const importErrors = importRows
-    .map((r, i) => ({
-      row: i + 2,
-      errors: [
-        "id",
-        "serial",
-        "category",
-        "group",
-        "type",
-        "brand",
-        "model",
-        "location",
-        "businessUnit",
-      ]
-        .filter((k) => !r[k])
-        .map((k) => `missing ${k}`)
-        .concat(
-          assets.some((a) => a.id === r.id) ? ["duplicate id"] : [],
-          assets.some((a) => a.serial === r.serial) ? ["duplicate serial"] : [],
-        ),
-    }))
-    .filter((x) => x.errors.length)
-  const commitImport = () => {
-    const bad = new Set(importErrors.map((x) => x.row - 2))
-    const valid = importRows
-      .filter((_, i) => !bad.has(i))
-      .map(
-        (r) =>
-          ({
-            ...r,
-            quantity: Number(r.quantity || 1),
-            uom: r.uom || "UNIT",
-            condition: r.condition || "Good",
-            updatedAt: today(),
-            demo: false,
-          }) as unknown as Asset,
+    setImportFileError("")
+    setImportRows([])
+    setImportFileName(file.name)
+    try {
+      const XLSX = await import("xlsx")
+      const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" })
+      const firstSheet = workbook.SheetNames[0]
+      if (!firstSheet) throw new Error("The workbook does not contain a sheet.")
+      const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(
+        workbook.Sheets[firstSheet],
+        { defval: "", raw: false },
       )
-    importAssets(valid)
+      if (!rows.length) throw new Error("No data rows were found in the file.")
+      setImportRows(rows.map(cleanImportRow))
+    } catch (error) {
+      setImportFileError(
+        error instanceof Error
+          ? error.message
+          : "The selected file could not be parsed.",
+      )
+    }
+  }
+  const importResults = useMemo(() => {
+    const prefixes = importRows.reduce((counts, row) => {
+      const prefix = (row.asset_prefix ?? "").trim().toUpperCase()
+      if (prefix) counts.set(prefix, (counts.get(prefix) ?? 0) + 1)
+      return counts
+    }, new Map<string, number>())
+    return importRows.map((row, index) =>
+      mapImportRow({
+        row,
+        index,
+        assets,
+        master,
+        businessUnit,
+        prefixes,
+      }),
+    )
+  }, [importRows, assets, master, businessUnit])
+  const importErrors = importResults.filter((result) => result.errors.length)
+  const validImports = importResults.flatMap((result) =>
+    result.asset ? [result.asset] : [],
+  )
+  const commitImport = () => {
+    if (!validImports.length) return
+    importAssets(validImports)
+    notify(
+      `${validImports.length} assets imported${importErrors.length ? `; ${importErrors.length} rows skipped` : ""}`,
+    )
     setImportOpen(false)
     setImportRows([])
+    setImportFileName("")
+    setImportFileError("")
   }
   return (
     <div className="page">
@@ -255,7 +480,15 @@ export default function AssetInventory() {
             </div>
           )}
         </div>
-        <Button variant="secondary" onClick={() => setImportOpen(true)}>
+        <Button
+          variant="secondary"
+          onClick={() => {
+            setImportOpen(true)
+            setImportRows([])
+            setImportFileName("")
+            setImportFileError("")
+          }}
+        >
           <Upload size={16} /> Import
         </Button>
         <Button
@@ -474,8 +707,8 @@ export default function AssetInventory() {
       />
       <Modal
         open={importOpen}
-        title="Import Assets from CSV"
-        description="CSV import is supported; XLSB parsing is not enabled in this prototype."
+        title="Import Assets from Excel"
+        description="Upload an XLSX, XLS, or CSV file. Reference codes are validated against current Master Data."
         onClose={() => setImportOpen(false)}
         wide
       >
@@ -483,7 +716,7 @@ export default function AssetInventory() {
           <div className="import-actions">
             <Input
               type="file"
-              accept=".csv,text/csv"
+              accept=".xlsx,.xls,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel,text/csv"
               onChange={(e) => readFile(e.target.files?.[0])}
             />
             <Button
@@ -491,18 +724,14 @@ export default function AssetInventory() {
               onClick={() =>
                 downloadCsv("asset-import-template.csv", [
                   {
-                    id: "",
-                    serial: "",
-                    category: "",
-                    group: "",
-                    type: "",
-                    brand: "",
-                    model: "",
-                    location: "",
-                    businessUnit: "",
-                    condition: "Good",
-                    quantity: 1,
-                    uom: "UNIT",
+                    category_id: "",
+                    brand_id: "",
+                    group_id: "",
+                    type_id: "",
+                    asset_name: "",
+                    asset_type: "",
+                    asset_status: "active",
+                    asset_prefix: "",
                   },
                 ])
               }
@@ -510,14 +739,23 @@ export default function AssetInventory() {
               Download template
             </Button>
           </div>
+          {importFileError && (
+            <div className="error-summary" role="alert">
+              <strong>Import failed</strong>
+              <span>{importFileError}</span>
+            </div>
+          )}
           {importRows.length > 0 && (
             <>
               <div className="import-summary">
-                <strong>{importRows.length} rows found</strong>
+                <strong>
+                  {importRows.length} rows found
+                  {importFileName ? ` in ${importFileName}` : ""}
+                </strong>
                 <Badge tone={importErrors.length ? "danger" : "success"}>
                   {importErrors.length
-                    ? `${importErrors.length} invalid`
-                    : "Ready to import"}
+                    ? `${validImports.length} valid · ${importErrors.length} invalid`
+                    : `${validImports.length} ready to import`}
                 </Badge>
               </div>
               <div className="import-preview">
@@ -525,25 +763,24 @@ export default function AssetInventory() {
                   <thead>
                     <tr>
                       <th>Row</th>
-                      <th>Asset ID</th>
-                      <th>Serial</th>
+                      <th>Asset Prefix</th>
+                      <th>Asset Name</th>
                       <th>Validation</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {importRows.slice(0, 10).map((r, i) => {
-                      const err = importErrors.find((x) => x.row === i + 2)
+                    {importResults.slice(0, 10).map((result) => {
                       return (
-                        <tr key={i}>
-                          <td>{i + 2}</td>
+                        <tr key={result.row}>
+                          <td>{result.row}</td>
                           <td>
-                            <code>{r.id}</code>
+                            <code>{result.source.asset_prefix}</code>
                           </td>
-                          <td>{r.serial}</td>
+                          <td>{result.source.asset_name}</td>
                           <td>
-                            {err ? (
+                            {result.errors.length ? (
                               <span className="error">
-                                {err.errors.join(", ")}
+                                {result.errors.join(", ")}
                               </span>
                             ) : (
                               <Badge>Good</Badge>
@@ -562,12 +799,10 @@ export default function AssetInventory() {
               Cancel
             </Button>
             <Button
-              disabled={
-                !importRows.length || importRows.length === importErrors.length
-              }
+              disabled={!validImports.length}
               onClick={commitImport}
             >
-              Import valid rows
+              Import {validImports.length} valid rows
             </Button>
           </div>
         </div>
