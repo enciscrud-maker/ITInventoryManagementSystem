@@ -1,0 +1,578 @@
+[
+ {
+   "brand_id": "b0001",
+   "brand_name": "Western Digital (WD) ",
+   "brand_code": "WD",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0002",
+   "brand_name": "Seagate",
+   "brand_code": "SG",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0003",
+   "brand_name": "Toshiba",
+   "brand_code": "TB",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0004",
+   "brand_name": "Hitachi",
+   "brand_code": "HC",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0005",
+   "brand_name": "Samsung",
+   "brand_code": "SS",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0006",
+   "brand_name": "Acer",
+   "brand_code": "AR",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0007",
+   "brand_name": "Microsoft",
+   "brand_code": "MS",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0008",
+   "brand_name": "ICA",
+   "brand_code": "AC",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0009",
+   "brand_name": "APC",
+   "brand_code": "AP",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0010",
+   "brand_name": "Others",
+   "brand_code": "OT",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0011",
+   "brand_name": "Gadmei",
+   "brand_code": "GM",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0012",
+   "brand_name": "Nvidia",
+   "brand_code": "NV",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0013",
+   "brand_name": "HP",
+   "brand_code": "HP",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0014",
+   "brand_name": "LG",
+   "brand_code": "LG",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0015",
+   "brand_name": "Orico",
+   "brand_code": "OR",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0016",
+   "brand_name": "Casio",
+   "brand_code": "CS",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0017",
+   "brand_name": "Epson",
+   "brand_code": "ES",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0018",
+   "brand_name": "HoneyWell",
+   "brand_code": "HW",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0019",
+   "brand_name": "Aten",
+   "brand_code": "AT",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0020",
+   "brand_name": "Sony",
+   "brand_code": "SN",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0021",
+   "brand_name": "Apple",
+   "brand_code": "AL",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0022",
+   "brand_name": "Simbada",
+   "brand_code": "SB",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0023",
+   "brand_name": "Ubiquity",
+   "brand_code": "UB",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0024",
+   "brand_name": "Visipro",
+   "brand_code": "VP",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0025",
+   "brand_name": "Lenovo",
+   "brand_code": "LV",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0026",
+   "brand_name": "Asus",
+   "brand_code": "AS",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0027",
+   "brand_name": "Alkaline",
+   "brand_code": "AK",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0028",
+   "brand_name": "Canon",
+   "brand_code": "CN",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0029",
+   "brand_name": "MYOB",
+   "brand_code": "MY",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0030",
+   "brand_name": "Krishand",
+   "brand_code": "KH",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0031",
+   "brand_name": "Cisco",
+   "brand_code": "CC",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0032",
+   "brand_name": "Adobe",
+   "brand_code": "AB",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0033",
+   "brand_name": "Autodesk",
+   "brand_code": "AD",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0034",
+   "brand_name": "Mushkin",
+   "brand_code": "MK",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0035",
+   "brand_name": "Inmarsat",
+   "brand_code": "IM",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0036",
+   "brand_name": "Hikvision",
+   "brand_code": "HV",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0037",
+   "brand_name": "Tp-link",
+   "brand_code": "TL",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0038",
+   "brand_name": "Nanostation",
+   "brand_code": "NS",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0039",
+   "brand_name": "Telkomsel",
+   "brand_code": "TS",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0040",
+   "brand_name": "Mikrotik",
+   "brand_code": "MT",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0041",
+   "brand_name": "Panasonic",
+   "brand_code": "PS",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0042",
+   "brand_name": "D-Link",
+   "brand_code": "DL",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0043",
+   "brand_name": "Blackberry",
+   "brand_code": "BB",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0044",
+   "brand_name": "Huawei",
+   "brand_code": "HU",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0045",
+   "brand_name": "ZTE",
+   "brand_code": "ZT",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0046",
+   "brand_name": "Ricoh",
+   "brand_code": "RC",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0047",
+   "brand_name": "Pathcord",
+   "brand_code": "PC",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0048",
+   "brand_name": "Xiaomi",
+   "brand_code": "XM",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0049",
+   "brand_name": "Ezpro",
+   "brand_code": "EP",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0050",
+   "brand_name": "Broadband",
+   "brand_code": "BR",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0051",
+   "brand_name": "Trendnet",
+   "brand_code": "TN",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0052",
+   "brand_name": "Airmax",
+   "brand_code": "AM",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0053",
+   "brand_name": "Fuji Xerox",
+   "brand_code": "FX",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0054",
+   "brand_name": "Infinix",
+   "brand_code": "IF",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0055",
+   "brand_name": "Nikon",
+   "brand_code": "NK",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0056",
+   "brand_name": "GS Premium",
+   "brand_code": "GS",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0057",
+   "brand_name": "Bervin",
+   "brand_code": "BV",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0058",
+   "brand_name": "Enzatec",
+   "brand_code": "EZ",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0059",
+   "brand_name": "Ezviz",
+   "brand_code": "EV",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0060",
+   "brand_name": "Hunsn",
+   "brand_code": "HN",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0061",
+   "brand_name": "Matsunaga",
+   "brand_code": "MN",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0062",
+   "brand_name": "Starlink",
+   "brand_code": "SL",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0063",
+   "brand_name": "Proton",
+   "brand_code": "PT",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0064",
+   "brand_name": "Solution",
+   "brand_code": "ST",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0065",
+   "brand_name": "Samoto",
+   "brand_code": "SM",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0066",
+   "brand_name": "3Power UP",
+   "brand_code": "PU",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0067",
+   "brand_name": "Inforce",
+   "brand_code": "IC",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0068",
+   "brand_name": "Logitech",
+   "brand_code": "LT",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0069",
+   "brand_name": "Sandisk",
+   "brand_code": "SD",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0070",
+   "brand_name": "Ugreen",
+   "brand_code": "UG",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0071",
+   "brand_name": "Vention",
+   "brand_code": "VT",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0072",
+   "brand_name": "AHD",
+   "brand_code": "AH",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0073",
+   "brand_name": "Indorack",
+   "brand_code": "IR",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0074",
+   "brand_name": "XGODY",
+   "brand_code": "XG",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0075",
+   "brand_name": "Anatal",
+   "brand_code": "AN",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0076",
+   "brand_name": "Belden",
+   "brand_code": "BD",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0077",
+   "brand_name": "Merlin Gerin",
+   "brand_code": "MG",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0078",
+   "brand_name": "Masko",
+   "brand_code": "MA",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0079",
+   "brand_name": "Panduit",
+   "brand_code": "PD",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0080",
+   "brand_name": "Leona",
+   "brand_code": "LN",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0081",
+   "brand_name": "Krisbow",
+   "brand_code": "KB",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0082",
+   "brand_name": "Thomson",
+   "brand_code": "TH",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0083",
+   "brand_name": "Infinity",
+   "brand_code": "IN",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0084",
+   "brand_name": "Holowits",
+   "brand_code": "HO",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0085",
+   "brand_name": "Yealink",
+   "brand_code": "YL",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0086",
+   "brand_name": "Tjmarine",
+   "brand_code": "TM",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0087",
+   "brand_name": "Yeastar",
+   "brand_code": "YS",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0088",
+   "brand_name": "Ruijie",
+   "brand_code": "RJ",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0089",
+   "brand_name": "Aethercom",
+   "brand_code": "AE",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0090",
+   "brand_name": "Sendon",
+   "brand_code": "SE",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0091",
+   "brand_name": "Kenika",
+   "brand_code": "KN",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0092",
+   "brand_name": "Dell",
+   "brand_code": "DE",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0093",
+   "brand_name": "Max Power",
+   "brand_code": "MP",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0094",
+   "brand_name": "Maruni Glass",
+   "brand_code": "ML",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0095",
+   "brand_name": "Moxa",
+   "brand_code": "MX",
+   "type_id": ""
+ },
+ {
+   "brand_id": "b0096",
+   "brand_name": "Robot",
+   "brand_code": "RB",
+   "type_id": ""
+ }
+]

@@ -1,0 +1,114 @@
+[
+ {
+   "group_id": "gr0001",
+   "group_name": "Computer",
+   "group_code": "CO",
+   "category_id": "c0001",
+   "category_name": "Goods",
+   "category_code": "G"
+ },
+ {
+   "group_id": "gr0002",
+   "group_name": "Smartphone",
+   "group_code": "SP",
+   "category_id": "c0001",
+   "category_name": "Goods",
+   "category_code": "G"
+ },
+ {
+   "group_id": "gr0003",
+   "group_name": "Tablet",
+   "group_code": "TA",
+   "category_id": "c0001",
+   "category_name": "Goods",
+   "category_code": "G"
+ },
+ {
+   "group_id": "gr0004",
+   "group_name": "Peripheral Device",
+   "group_code": "PD",
+   "category_id": "c0001",
+   "category_name": "Goods",
+   "category_code": "G"
+ },
+ {
+   "group_id": "gr0005",
+   "group_name": "Storage",
+   "group_code": "ST",
+   "category_id": "c0001",
+   "category_name": "Goods",
+   "category_code": "G"
+ },
+ {
+   "group_id": "gr0006",
+   "group_name": "Network Device",
+   "group_code": "ND",
+   "category_id": "c0001",
+   "category_name": "Goods",
+   "category_code": "G"
+ },
+ {
+   "group_id": "gr0007",
+   "group_name": "Operating System",
+   "group_code": "OS",
+   "category_id": "c0005",
+   "category_name": "Software",
+   "category_code": "S"
+ },
+ {
+   "group_id": "gr0008",
+   "group_name": "Application",
+   "group_code": "AP",
+   "category_id": "c0005",
+   "category_name": "Software",
+   "category_code": "S"
+ },
+ {
+   "group_id": "gr0009",
+   "group_name": "Utility Software",
+   "group_code": "US",
+   "category_id": "c0005",
+   "category_name": "Software",
+   "category_code": "S"
+ },
+ {
+   "group_id": "gr0010",
+   "group_name": "Peripheral Tools",
+   "group_code": "PT",
+   "category_id": "c0002",
+   "category_name": "Tools",
+   "category_code": "T"
+ },
+ {
+   "group_id": "gr0011",
+   "group_name": "Peripheral Consumable",
+   "group_code": "PC",
+   "category_id": "c0004",
+   "category_name": "Consumable",
+   "category_code": "C"
+ },
+ {
+   "group_id": "gr0012",
+   "group_name": "Document",
+   "group_code": "DC",
+   "category_id": "c0003",
+   "category_name": "Document",
+   "category_code": "D"
+ },
+ {
+   "group_id": "gr0013",
+   "group_name": "Network Tools",
+   "group_code": "NT",
+   "category_id": "c0002",
+   "category_name": "Tools",
+   "category_code": "T"
+ },
+ {
+   "group_id": "gr0014",
+   "group_name": "Network Consumable",
+   "group_code": "NC",
+   "category_id": "c0004",
+   "category_name": "Consumable",
+   "category_code": "C"
+ }
+]

@@ -1,0 +1,27 @@
+[
+ {
+   "category_id": "c0001",
+   "category_name": "Goods",
+   "category_code": "G"
+ },
+ {
+   "category_id": "c0002",
+   "category_name": "Tools",
+   "category_code": "T"
+ },
+ {
+   "category_id": "c0003",
+   "category_name": "Document",
+   "category_code": "D"
+ },
+ {
+   "category_id": "c0004",
+   "category_name": "Consumable",
+   "category_code": "C"
+ },
+ {
+   "category_id": "c0005",
+   "category_name": "Software",
+   "category_code": "S"
+ }
+]
