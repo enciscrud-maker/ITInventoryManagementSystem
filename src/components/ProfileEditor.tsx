@@ -7,6 +7,10 @@ import { useAuth } from "../auth/AuthContext"
 import { updateProfile, uploadProfilePhoto } from "../auth/client"
 import { businessUnits } from "../data/demoData"
 import { Button, Input, Modal, Select } from "./ui"
+import {
+  recordDataActivity,
+  summarizeChanges,
+} from "../services/historyService"
 
 export function ProfileEditor({
   open,
@@ -57,6 +61,20 @@ export function ProfileEditor({
         return
       }
       let account = result.data
+      const profileChanges = summarizeChanges(
+        currentUser as unknown as Record<string, unknown>,
+        account as unknown as Record<string, unknown>,
+      )
+      if (Object.keys(profileChanges).length) {
+        recordDataActivity({
+          actor: currentUser,
+          module: "Account Management",
+          action: "Update",
+          recordId: currentUser.id,
+          recordLabel: currentUser.name,
+          changes: profileChanges,
+        })
+      }
       if (photo) {
         const photoData = new FormData()
         photoData.set("photo", photo)
@@ -67,6 +85,21 @@ export function ProfileEditor({
           return
         }
         account = photoResult.data
+        if (!Object.keys(profileChanges).length) {
+          recordDataActivity({
+            actor: currentUser,
+            module: "Account Management",
+            action: "Update",
+            recordId: currentUser.id,
+            recordLabel: currentUser.name,
+            changes: {
+              profilePhoto: {
+                before: currentUser.profile_photo ? "Existing photo" : "—",
+                after: "Updated photo",
+              },
+            },
+          })
+        }
       }
       refreshCurrentUser(account)
       onClose()

@@ -20,7 +20,7 @@ import {
 } from "@/components/ui"
 
 export default function Audits() {
-  const { audits, assets, businessUnit, saveAudit, setSelectedAsset } =
+  const { audits, assets, master, businessUnit, saveAudit, setSelectedAsset } =
     useInventory()
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [create, setCreate] = useState(false)
@@ -231,14 +231,10 @@ export default function Audits() {
                             updateItem(item, { actualLocation: e.target.value })
                           }
                         >
-                          {[
-                            "Jakarta HQ",
-                            "Surabaya Office",
-                            "Cikarang Warehouse",
-                            "Balikpapan Site",
-                            "Medan Branch",
-                          ].map((x) => (
-                            <option key={x}>{x}</option>
+                          {master.locations.map((location) => (
+                            <option key={location.id} value={location.name}>
+                              {location.name}
+                            </option>
                           ))}
                         </select>
                       </td>
@@ -427,11 +423,7 @@ export default function Audits() {
             }
             options={[
               "All Locations",
-              "Jakarta HQ",
-              "Surabaya Office",
-              "Cikarang Warehouse",
-              "Balikpapan Site",
-              "Medan Branch",
+              ...master.locations.map((location) => location.name),
             ]}
           />
           <Input

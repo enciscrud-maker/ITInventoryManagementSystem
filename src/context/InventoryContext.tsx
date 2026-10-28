@@ -17,12 +17,19 @@ import {
   createCategoryRecord,
   createGroupRecord,
   generateAssetId,
+  isAssetClassificationValid,
   migrateMasterData,
+  normalizeAssetClassification,
   reserveMasterId,
   resolveCategoryById,
 } from "../utils/masterData"
 import { useAuth } from "../auth/AuthContext"
 import { canDelete } from "../services/authorizationService"
+import {
+  recordDataActivity,
+  summarizeChanges,
+  type ActivityChange,
+} from "../services/historyService"
 
 type State = {
   assets: Asset[]
@@ -131,6 +138,11 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem("iti-master", JSON.stringify(master))
   }, [master])
   useEffect(() => {
+    setAssets((current) =>
+      current.map((asset) => normalizeAssetClassification(asset, master)),
+    )
+  }, [master])
+  useEffect(() => {
     localStorage.setItem("iti-unit", JSON.stringify(businessUnit))
   }, [businessUnit])
   useEffect(() => {
@@ -145,11 +157,43 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     window.setTimeout(() => setToast(""), 3000)
   }
   const saveAsset = (asset: Asset) => {
+    const normalizedAsset = normalizeAssetClassification(asset, master)
+    const hasCanonicalClassification = [
+      normalizedAsset.categoryId,
+      normalizedAsset.groupId,
+      normalizedAsset.typeId,
+      normalizedAsset.brandId,
+      normalizedAsset.modelId,
+    ].every(Boolean)
+    if (
+      hasCanonicalClassification &&
+      !isAssetClassificationValid(normalizedAsset, master)
+    ) {
+      notify("Asset classification references are no longer valid")
+      return
+    }
+    const existing = assets.find((item) => item.id === normalizedAsset.id)
     setAssets((v) =>
-      v.some((a) => a.id === asset.id)
-        ? v.map((a) => (a.id === asset.id ? asset : a))
-        : [asset, ...v],
+      v.some((a) => a.id === normalizedAsset.id)
+        ? v.map((a) => (a.id === normalizedAsset.id ? normalizedAsset : a))
+        : [normalizedAsset, ...v],
     )
+    const changes = existing
+      ? summarizeChanges(
+          existing as unknown as Record<string, unknown>,
+          normalizedAsset as unknown as Record<string, unknown>,
+        )
+      : undefined
+    if (!existing || Object.keys(changes ?? {}).length) {
+      recordDataActivity({
+        actor: currentUser,
+        module: "Asset Inventory",
+        action: existing ? "Update" : "Create",
+        recordId: normalizedAsset.id,
+        recordLabel: `${normalizedAsset.brand} ${normalizedAsset.model}`,
+        changes,
+      })
+    }
     notify("Asset saved successfully")
   }
   const saveTransaction = (transaction: Transaction) => {
@@ -202,6 +246,13 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         }
       }),
     )
+    recordDataActivity({
+      actor: currentUser,
+      module: tx.direction === "In" ? "Goods In" : "Goods Out",
+      action: "Create",
+      recordId: tx.id,
+      recordLabel: tx.document,
+    })
     notify(`${tx.direction === "In" ? "Goods-In" : "Goods-Out"} recorded`)
     return true
   }
@@ -236,15 +287,87 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
           : item,
       ),
     )
+    recordDataActivity({
+      actor: currentUser,
+      module:
+        transaction.direction === "In" ? "Goods In" : "Goods Out",
+      action: "Update",
+      recordId: transaction.id,
+      recordLabel: transaction.document,
+      changes: {
+        status: {
+          before: transaction.status,
+          after: status,
+        },
+      },
+    })
     notify("Transaction status updated")
     return true
   }
   const saveAudit = (audit: Audit) => {
+    const existing = audits.find((item) => item.id === audit.id)
+    const hasNewMissingAsset = audit.items.some(
+      (item) =>
+        !assets.some((asset) => asset.id === item.assetId) &&
+        !existing?.items.some(
+          (existingItem) => existingItem.assetId === item.assetId,
+        ),
+    )
+    if (hasNewMissingAsset) {
+      notify("Stock opname contains an asset that no longer exists")
+      return
+    }
     setAudits((v) =>
       v.some((a) => a.id === audit.id)
         ? v.map((a) => (a.id === audit.id ? audit : a))
         : [audit, ...v],
     )
+    const updatedAuditItems = existing
+      ? audit.items.filter((item) => {
+          const previous = existing.items.find(
+            (candidate) => candidate.assetId === item.assetId,
+          )
+          return JSON.stringify(previous) !== JSON.stringify(item)
+        }).length
+      : 0
+    const changes: Record<string, ActivityChange> | undefined = existing
+      ? {
+          ...(existing.status !== audit.status
+            ? {
+                status: {
+                  before: existing.status,
+                  after: audit.status,
+                },
+              }
+            : {}),
+          ...(existing.items.length !== audit.items.length
+            ? {
+                itemCount: {
+                  before: String(existing.items.length),
+                  after: String(audit.items.length),
+                },
+              }
+            : {}),
+          ...(updatedAuditItems
+            ? {
+                itemsUpdated: {
+                  before: "0",
+                  after: String(updatedAuditItems),
+                },
+              }
+            : {}),
+        }
+      : undefined
+    if (!existing || Object.keys(changes ?? {}).length) {
+      recordDataActivity({
+        actor: currentUser,
+        module: "Stock Opname",
+        action: existing ? "Update" : "Create",
+        recordId: audit.id,
+        recordLabel: audit.name,
+        changes,
+      })
+    }
     notify("Audit progress saved")
   }
   const saveMaster = (key: string, item: MasterItem) => {
@@ -289,6 +412,22 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
               : asset,
           ),
         )
+      }
+      const changes = existing
+        ? summarizeChanges(
+            existing as unknown as Record<string, unknown>,
+            normalized as unknown as Record<string, unknown>,
+          )
+        : undefined
+      if (!existing || Object.keys(changes ?? {}).length) {
+        recordDataActivity({
+          actor: currentUser,
+          module: "Category",
+          action: existing ? "Update" : "Create",
+          recordId: categoryId,
+          recordLabel: normalized.name,
+          changes,
+        })
       }
       notify("Category saved successfully")
       return
@@ -342,6 +481,22 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
               : asset,
           ),
         )
+      }
+      const changes = existing
+        ? summarizeChanges(
+            existing as unknown as Record<string, unknown>,
+            normalized as unknown as Record<string, unknown>,
+          )
+        : undefined
+      if (!existing || Object.keys(changes ?? {}).length) {
+        recordDataActivity({
+          actor: currentUser,
+          module: "Group",
+          action: existing ? "Update" : "Create",
+          recordId: groupId,
+          recordLabel: normalized.name,
+          changes,
+        })
       }
       notify("Group saved successfully")
       return
@@ -419,6 +574,32 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         ),
       )
     }
+    const moduleName =
+      key === "types"
+        ? "Type"
+        : key === "brands"
+          ? "Brand"
+          : key === "models"
+            ? "Model"
+            : key === "locations"
+              ? "Location"
+              : "Condition"
+    const changes = existing
+      ? summarizeChanges(
+          existing as unknown as Record<string, unknown>,
+          item as unknown as Record<string, unknown>,
+        )
+      : undefined
+    if (!existing || Object.keys(changes ?? {}).length) {
+      recordDataActivity({
+        actor: currentUser,
+        module: moduleName,
+        action: existing ? "Update" : "Create",
+        recordId: item.id,
+        recordLabel: item.name,
+        changes,
+      })
+    }
     notify("Master data saved")
   }
   const deleteMaster = (key: string, id: string) => {
@@ -467,8 +648,34 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
           candidate.group_id !== id,
       ),
     }))
+    recordDataActivity({
+      actor: currentUser,
+      module:
+        key === "categories"
+          ? "Category"
+          : key === "groups"
+            ? "Group"
+            : "Master Data",
+      action: "Delete",
+      recordId: item.id,
+      recordLabel: item.name,
+    })
     notify("Master record deleted")
     return true
+  }
+  const importAssets = (items: Asset[]) => {
+    setAssets((value) => [
+      ...items.map((asset) => normalizeAssetClassification(asset, master)),
+      ...value,
+    ])
+    recordDataActivity({
+      actor: currentUser,
+      module: "Asset Inventory",
+      action: "Create",
+      recordId: `IMPORT-${Date.now()}`,
+      recordLabel: `${items.length} imported assets`,
+    })
+    notify(`${items.length} assets imported`)
   }
   const value = useMemo(
     () => ({
@@ -490,10 +697,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       setSidebarCollapsed,
       setSelectedAsset,
       notify,
-      importAssets: (items: Asset[]) => {
-        setAssets((v) => [...items, ...v])
-        notify(`${items.length} assets imported`)
-      },
+      importAssets,
       saveMaster,
       deleteMaster,
     }),

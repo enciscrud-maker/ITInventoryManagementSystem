@@ -19,6 +19,11 @@ import {
   today,
 } from "../utils/helpers"
 import {
+  getMasterItemId,
+  isAssetClassificationValid,
+  normalizeAssetClassification,
+} from "../utils/masterData"
+import {
   Badge,
   Button,
   Drawer,
@@ -44,6 +49,11 @@ export function AssetForm({
     id: "",
     serial: "",
     tag: "",
+    categoryId: "",
+    groupId: "",
+    typeId: "",
+    brandId: "",
+    modelId: "",
     category: "",
     group: "",
     type: "",
@@ -57,30 +67,56 @@ export function AssetForm({
     updatedAt: today(),
     demo: false,
   }
-  const [form, setForm] = useState<Asset>(asset ?? blank)
+  const [form, setForm] = useState<Asset>(() =>
+    normalizeAssetClassification(asset ?? blank, master),
+  )
   const [errors, setErrors] = useState<string[]>([])
   const [dirty, setDirty] = useState(false)
   useEffect(() => {
-    setForm(asset ?? blank)
+    setForm(normalizeAssetClassification(asset ?? blank, master))
     setErrors([])
     setDirty(false)
-  }, [asset, open])
+  }, [asset, open, master])
   const set = (key: keyof Asset, value: string | number) => {
     setForm((v) => ({ ...v, [key]: value }))
     setDirty(true)
   }
   const groups = master.groups.filter(
-    (x) => !form.category || x.parent === form.category,
+    (x) => !form.categoryId || x.category_id === form.categoryId,
   )
   const types = master.types.filter(
-    (x) => !form.group || x.parent === form.group,
+    (x) =>
+      (!form.groupId || x.group_id === form.groupId) &&
+      (!form.categoryId ||
+        !x.category_id ||
+        x.category_id === form.categoryId),
   )
   const brands = master.brands.filter(
-    (x) => !form.type || x.parent === form.type || x.parent === form.group,
+    (brand) =>
+      !form.typeId ||
+      !brand.type_id ||
+      brand.type_id === form.typeId ||
+      master.models.some(
+        (model) =>
+          model.brand_id === getMasterItemId(brand, "brand_id") &&
+          model.type_id === form.typeId,
+      ),
   )
   const models = master.models.filter(
-    (x) => !form.brand || x.parent === form.brand,
+    (x) =>
+      (!form.brandId || x.brand_id === form.brandId) &&
+      (!form.typeId || x.type_id === form.typeId),
   )
+  const findItem = (
+    key: "categories" | "groups" | "types" | "brands" | "models",
+    id: string,
+    idField:
+      | "category_id"
+      | "group_id"
+      | "type_id"
+      | "brand_id"
+      | "model_id",
+  ) => master[key].find((item) => getMasterItemId(item, idField) === id)
   const preview = asset?.id || generateAssetId(form, master, assets)
   const close = () => {
     if (!dirty || window.confirm("Discard unsaved changes?")) onClose()
@@ -108,6 +144,15 @@ export function AssetForm({
       )
     )
       next.push("Serial number already exists")
+    if (
+      form.category &&
+      form.group &&
+      form.type &&
+      form.brand &&
+      form.model &&
+      !isAssetClassificationValid(form, master)
+    )
+      next.push("The selected classification is no longer valid")
     if (next.length) {
       setErrors(next)
       return
@@ -138,62 +183,148 @@ export function AssetForm({
           <div className="form-grid">
             <Select
               label="Category *"
-              value={form.category}
+              value={form.categoryId}
               onChange={(e) => {
-                set("category", e.target.value)
-                set("group", "")
+                const category = findItem(
+                  "categories",
+                  e.target.value,
+                  "category_id",
+                )
+                setForm({
+                  ...form,
+                  categoryId: e.target.value,
+                  category: category?.name ?? "",
+                  groupId: "",
+                  group: "",
+                  typeId: "",
+                  type: "",
+                  brandId: "",
+                  brand: "",
+                  modelId: "",
+                  model: "",
+                })
+                setDirty(true)
               }}
               options={[
                 { value: "", label: "Select category" },
                 ...master.categories.map((x) => ({
-                  value: x.name,
+                  value: getMasterItemId(x, "category_id"),
                   label: x.name,
                 })),
               ]}
             />
             <Select
               label="Group *"
-              value={form.group}
+              value={form.groupId}
               onChange={(e) => {
-                set("group", e.target.value)
-                set("type", "")
+                const group = findItem("groups", e.target.value, "group_id")
+                setForm({
+                  ...form,
+                  groupId: e.target.value,
+                  group: group?.name ?? "",
+                  typeId: "",
+                  type: "",
+                  brandId: "",
+                  brand: "",
+                  modelId: "",
+                  model: "",
+                })
+                setDirty(true)
               }}
               options={[
                 { value: "", label: "Select group" },
-                ...groups.map((x) => ({ value: x.name, label: x.name })),
+                ...groups.map((x) => ({
+                  value: getMasterItemId(x, "group_id"),
+                  label: x.name,
+                })),
               ]}
             />
             <Select
               label="Type *"
-              value={form.type}
+              value={form.typeId}
               onChange={(e) => {
-                set("type", e.target.value)
-                set("brand", "")
+                const type = findItem("types", e.target.value, "type_id")
+                const brand = findItem(
+                  "brands",
+                  form.brandId ?? "",
+                  "brand_id",
+                )
+                const keepBrand =
+                  !brand?.type_id || brand.type_id === e.target.value
+                setForm({
+                  ...form,
+                  typeId: e.target.value,
+                  type: type?.name ?? "",
+                  brandId: keepBrand ? form.brandId : "",
+                  brand: keepBrand ? form.brand : "",
+                  modelId: "",
+                  model: "",
+                })
+                setDirty(true)
               }}
               options={[
                 { value: "", label: "Select type" },
-                ...types.map((x) => ({ value: x.name, label: x.name })),
+                ...types.map((x) => ({
+                  value: getMasterItemId(x, "type_id"),
+                  label: x.name,
+                })),
               ]}
             />
             <Select
               label="Brand *"
-              value={form.brand}
-              onChange={(e) => {
-                set("brand", e.target.value)
-                set("model", "")
+              value={form.brandId ?? ""}
+              onChange={(event) => {
+                const brandId = event.target.value
+                const brand = findItem("brands", brandId, "brand_id")
+                setForm({
+                  ...form,
+                  brandId,
+                  brand: brand?.name ?? "",
+                  modelId: "",
+                  model: "",
+                })
+                setDirty(true)
               }}
               options={[
                 { value: "", label: "Select brand" },
-                ...brands.map((x) => ({ value: x.name, label: x.name })),
+                ...brands.map((x) => ({
+                  value: getMasterItemId(x, "brand_id"),
+                  label: x.name,
+                })),
               ]}
             />
             <Select
               label="Model *"
-              value={form.model}
-              onChange={(e) => set("model", e.target.value)}
+              value={form.modelId ?? ""}
+              onChange={(event) => {
+                const modelId = event.target.value
+                const model = findItem("models", modelId, "model_id")
+                setForm(
+                  normalizeAssetClassification(
+                    {
+                      ...form,
+                      modelId,
+                      model: model?.name ?? "",
+                      brandId: String(model?.brand_id ?? form.brandId ?? ""),
+                      brand: "",
+                      typeId: String(model?.type_id ?? form.typeId ?? ""),
+                      type: "",
+                      groupId: String(model?.group_id ?? ""),
+                      group: String(model?.group_name ?? ""),
+                      categoryId: String(model?.category_id ?? ""),
+                      category: String(model?.category_name ?? ""),
+                    },
+                    master,
+                  ) as Asset,
+                )
+                setDirty(true)
+              }}
               options={[
                 { value: "", label: "Select model" },
-                ...models.map((x) => ({ value: x.name, label: x.name })),
+                ...models.map((x) => ({
+                  value: getMasterItemId(x, "model_id"),
+                  label: x.name,
+                })),
               ]}
             />
           </div>

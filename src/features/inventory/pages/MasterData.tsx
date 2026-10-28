@@ -28,7 +28,6 @@ import {
   Modal,
   PageHeader,
   Pagination,
-  SearchableSelect,
   SearchInput,
   Select,
   Tabs,
@@ -478,14 +477,17 @@ function MasterFormFields({
 
       {masterKey === "groups" && (
         <>
-          <SearchableSelect
+          <Select
             label="Category *"
             value={draft.category_id ?? ""}
-            onChange={changeGroupCategory}
-            options={master.categories.map((item) => ({
-              value: item.category_id ?? item.id,
-              label: `${item.name} (${item.code})`,
-            }))}
+            onChange={(event) => changeGroupCategory(event.target.value)}
+            options={[
+              { value: "", label: "Select category" },
+              ...master.categories.map((item) => ({
+                value: item.category_id ?? item.id,
+                label: `${item.name} (${item.code})`,
+              })),
+            ]}
           />
           <Input
             label="Category Name"
@@ -502,14 +504,17 @@ function MasterFormFields({
 
       {masterKey === "types" && (
         <>
-          <SearchableSelect
+          <Select
             label="Group *"
             value={draft.group_id ?? ""}
-            onChange={changeTypeGroup}
-            options={master.groups.map((item) => ({
-              value: item.group_id ?? item.id,
-              label: `${item.name} · ${item.category_name}`,
-            }))}
+            onChange={(event) => changeTypeGroup(event.target.value)}
+            options={[
+              { value: "", label: "Select group" },
+              ...master.groups.map((item) => ({
+                value: item.group_id ?? item.id,
+                label: `${item.name} · ${item.category_name}`,
+              })),
+            ]}
           />
           <Input label="Category" value={draft.category_name ?? ""} readOnly />
           <Input label="Group Code" value={draft.group_code ?? ""} readOnly />
@@ -517,40 +522,49 @@ function MasterFormFields({
       )}
 
       {masterKey === "brands" && (
-        <SearchableSelect
+        <Select
           label="Type (optional)"
           value={draft.type_id ?? ""}
-          onChange={changeBrandType}
-          options={master.types.map((item) => ({
-            value: item.type_id ?? item.id,
-            label: `${item.name} (${item.code})`,
-          }))}
+          onChange={(event) => changeBrandType(event.target.value)}
+          options={[
+            { value: "", label: "No type / Global brand" },
+            ...master.types.map((item) => ({
+              value: item.type_id ?? item.id,
+              label: `${item.name} (${item.code})`,
+            })),
+          ]}
         />
       )}
 
       {masterKey === "models" && (
         <>
-          <SearchableSelect
+          <Select
             label="Brand *"
             value={draft.brand_id ?? ""}
-            onChange={(brandId) =>
-              updateModelHierarchy(brandId, draft.type_id ?? "")
+            onChange={(event) =>
+              updateModelHierarchy(event.target.value, draft.type_id ?? "")
             }
-            options={master.brands.map((item) => ({
-              value: item.brand_id ?? item.id,
-              label: `${item.name} (${item.code})`,
-            }))}
+            options={[
+              { value: "", label: "Select brand" },
+              ...master.brands.map((item) => ({
+                value: item.brand_id ?? item.id,
+                label: `${item.name} (${item.code})`,
+              })),
+            ]}
           />
-          <SearchableSelect
+          <Select
             label="Type *"
             value={draft.type_id ?? ""}
-            onChange={(typeId) =>
-              updateModelHierarchy(draft.brand_id ?? "", typeId)
+            onChange={(event) =>
+              updateModelHierarchy(draft.brand_id ?? "", event.target.value)
             }
-            options={master.types.map((item) => ({
-              value: item.type_id ?? item.id,
-              label: `${item.name} · ${item.group_name}`,
-            }))}
+            options={[
+              { value: "", label: "Select type" },
+              ...master.types.map((item) => ({
+                value: item.type_id ?? item.id,
+                label: `${item.name} · ${item.group_name}`,
+              })),
+            ]}
           />
           <Input label="Group" value={draft.group_name ?? ""} readOnly />
           <Input label="Category" value={draft.category_name ?? ""} readOnly />
@@ -571,14 +585,17 @@ function MasterFormFields({
               updateDraft({ business_unit: event.target.value })
             }
           />
-          <SearchableSelect
+          <Select
             label="Model"
             value={draft.model_id ?? ""}
-            onChange={changeRelatedModel}
-            options={master.models.map((item) => ({
-              value: item.model_id ?? item.id,
-              label: `${item.name} · ${item.brand_name}`,
-            }))}
+            onChange={(event) => changeRelatedModel(event.target.value)}
+            options={[
+              { value: "", label: "No related model" },
+              ...master.models.map((item) => ({
+                value: item.model_id ?? item.id,
+                label: `${item.name} · ${item.brand_name}`,
+              })),
+            ]}
           />
           <Input label="Brand" value={draft.brand_name ?? ""} readOnly />
           <Input label="Asset ID" value={draft.asset_id ?? ""} readOnly />
@@ -586,10 +603,11 @@ function MasterFormFields({
       )}
 
       {masterKey === "locations" && (
-        <SearchableSelect
+        <Select
           label="Kondisi"
           value={draft.condition_id ?? ""}
-          onChange={(conditionId) => {
+          onChange={(event) => {
+            const conditionId = event.target.value
             const condition = master.conditions.find(
               (item) => (item.condition_id ?? item.id) === conditionId,
             )
@@ -598,18 +616,22 @@ function MasterFormFields({
               condition_name: condition?.name ?? "",
             })
           }}
-          options={master.conditions.map((item) => ({
-            value: item.condition_id ?? item.id,
-            label: `${item.name} (${item.code})`,
-          }))}
+          options={[
+            { value: "", label: "Select condition" },
+            ...master.conditions.map((item) => ({
+              value: item.condition_id ?? item.id,
+              label: `${item.name} (${item.code})`,
+            })),
+          ]}
         />
       )}
 
       {masterKey === "conditions" && (
-        <SearchableSelect
+        <Select
           label="Lokasi"
           value={draft.location_id ?? ""}
-          onChange={(locationId) => {
+          onChange={(event) => {
+            const locationId = event.target.value
             const location = master.locations.find(
               (item) => (item.location_id ?? item.id) === locationId,
             )
@@ -618,10 +640,13 @@ function MasterFormFields({
               location_name: location?.name ?? "",
             })
           }}
-          options={master.locations.map((item) => ({
-            value: item.location_id ?? item.id,
-            label: `${item.name} (${item.code})`,
-          }))}
+          options={[
+            { value: "", label: "Select location" },
+            ...master.locations.map((item) => ({
+              value: item.location_id ?? item.id,
+              label: `${item.name} (${item.code})`,
+            })),
+          ]}
         />
       )}
     </>

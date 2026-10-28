@@ -4,6 +4,11 @@ export type Asset = {
   id: string
   serial: string
   tag?: string
+  categoryId?: string
+  groupId?: string
+  typeId?: string
+  brandId?: string
+  modelId?: string
   category: string
   group: string
   type: string

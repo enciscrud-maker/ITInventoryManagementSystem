@@ -1,4 +1,4 @@
-import { demoMaster, type MasterItem } from "../data/demoData"
+import { demoMaster, type Asset, type MasterItem } from "../data/demoData"
 
 export type MasterKey = "categories" | "groups" | "types" | "brands" | "models" | "locations" | "conditions"
 
@@ -85,6 +85,154 @@ export function resolveTypeById(types: MasterItem[], typeId: string) {
 
 export function resolveBrandById(brands: MasterItem[], brandId: string) {
   return brands.find((item) => (item.brand_id ?? item.id) === brandId)
+}
+
+export function getMasterItemId(
+  item: MasterItem | undefined,
+  field: keyof MasterItem,
+) {
+  return String(item?.[field] ?? item?.id ?? "")
+}
+
+function resolveMasterReference(
+  items: MasterItem[],
+  id: string | undefined,
+  name: string | undefined,
+  idField: keyof MasterItem,
+) {
+  const targetId = normalize(id ?? "")
+  const targetName = normalize(name ?? "")
+  const nameField = `${String(idField).replace(/_id$/, "")}_name` as keyof MasterItem
+  return items.find(
+    (item) =>
+      (targetId &&
+        [item[idField], item.id].some(
+          (value) => normalize(String(value ?? "")) === targetId,
+        )) ||
+      (targetName &&
+        [item[nameField], item.name].some(
+          (value) => normalize(String(value ?? "")) === targetName,
+        )),
+  )
+}
+
+export function normalizeAssetClassification<T extends Partial<Asset>>(
+  asset: T,
+  master: Record<string, MasterItem[]>,
+) {
+  const models = master.models ?? []
+  const modelById = resolveMasterReference(
+    models,
+    asset.modelId,
+    undefined,
+    "model_id",
+  )
+  const modelCandidates = models.filter(
+    (item) => normalize(item.name) === normalize(asset.model ?? ""),
+  )
+  const model =
+    modelById ??
+    modelCandidates.find(
+      (item) =>
+        (!asset.brandId || item.brand_id === asset.brandId) &&
+        (!asset.brand ||
+          normalize(item.brand_name ?? "") === normalize(asset.brand)) &&
+        (!asset.typeId || item.type_id === asset.typeId) &&
+        (!asset.type ||
+          normalize(item.type_name ?? "") === normalize(asset.type)),
+    ) ??
+    modelCandidates[0]
+  const type = resolveMasterReference(
+    master.types ?? [],
+    asset.typeId || model?.type_id,
+    asset.type || model?.type_name,
+    "type_id",
+  )
+  const group = resolveMasterReference(
+    master.groups ?? [],
+    asset.groupId || type?.group_id || model?.group_id,
+    asset.group || type?.group_name || model?.group_name,
+    "group_id",
+  )
+  const category = resolveMasterReference(
+    master.categories ?? [],
+    asset.categoryId || group?.category_id || type?.category_id,
+    asset.category || group?.category_name || type?.category_name,
+    "category_id",
+  )
+  const brand = resolveMasterReference(
+    master.brands ?? [],
+    asset.brandId || model?.brand_id,
+    asset.brand || model?.brand_name,
+    "brand_id",
+  )
+
+  return {
+    ...asset,
+    categoryId: getMasterItemId(category, "category_id"),
+    groupId: getMasterItemId(group, "group_id"),
+    typeId: getMasterItemId(type, "type_id"),
+    brandId: getMasterItemId(brand, "brand_id"),
+    modelId: getMasterItemId(model, "model_id"),
+    category: category?.name ?? asset.category ?? "",
+    group: group?.name ?? asset.group ?? "",
+    type: type?.name ?? asset.type ?? "",
+    brand: brand?.name ?? asset.brand ?? "",
+    model: model?.name ?? asset.model ?? "",
+  }
+}
+
+export function isAssetClassificationValid(
+  asset: Partial<Asset>,
+  master: Record<string, MasterItem[]>,
+) {
+  const normalizedAsset = normalizeAssetClassification(asset, master)
+  const category = resolveMasterReference(
+    master.categories ?? [],
+    normalizedAsset.categoryId,
+    normalizedAsset.category,
+    "category_id",
+  )
+  const group = resolveMasterReference(
+    master.groups ?? [],
+    normalizedAsset.groupId,
+    normalizedAsset.group,
+    "group_id",
+  )
+  const type = resolveMasterReference(
+    master.types ?? [],
+    normalizedAsset.typeId,
+    normalizedAsset.type,
+    "type_id",
+  )
+  const brand = resolveMasterReference(
+    master.brands ?? [],
+    normalizedAsset.brandId,
+    normalizedAsset.brand,
+    "brand_id",
+  )
+  const model = resolveMasterReference(
+    master.models ?? [],
+    normalizedAsset.modelId,
+    normalizedAsset.model,
+    "model_id",
+  )
+  if (!category || !group || !type || !brand || !model) return false
+
+  const categoryId = getMasterItemId(category, "category_id")
+  const groupId = getMasterItemId(group, "group_id")
+  const typeId = getMasterItemId(type, "type_id")
+  const brandId = getMasterItemId(brand, "brand_id")
+  const modelSupportsBrandType =
+    (!model.brand_id || model.brand_id === brandId) &&
+    (!model.type_id || model.type_id === typeId)
+  return (
+    (!group.category_id || group.category_id === categoryId) &&
+    (!type.group_id || type.group_id === groupId) &&
+    (!type.category_id || type.category_id === categoryId) &&
+    (!brand.type_id || brand.type_id === typeId || modelSupportsBrandType) &&
+    modelSupportsBrandType
+  )
 }
 
 export function getGroupsByCategory(groups: MasterItem[], categoryId: string) {

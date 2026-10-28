@@ -10,6 +10,7 @@ import {
 import { useRouter } from "next/navigation"
 import type { PublicAccount } from "./types"
 import { logoutAccount } from "./client"
+import { recordLoginHistory } from "../services/historyService"
 
 type AuthState = {
   currentUser: PublicAccount
@@ -33,7 +34,14 @@ export function AuthProvider({
   const router = useRouter()
 
   const logout = async () => {
-    await logoutAccount()
+    const result = await logoutAccount()
+    if (result.success) {
+      recordLoginHistory({
+        activityType: "Logout",
+        account: currentUser,
+        result: "Success",
+      })
+    }
     startTransition(() => {
       router.replace("/login")
       router.refresh()

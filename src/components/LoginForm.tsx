@@ -4,6 +4,7 @@ import { useState, useTransition, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 import { Boxes, LockKeyhole } from "lucide-react"
 import { loginAccount } from "@/auth/client"
+import { recordLoginHistory } from "@/services/historyService"
 import { Button, Input, PasswordInput } from "./ui"
 
 export function LoginForm() {
@@ -21,9 +22,20 @@ export function LoginForm() {
     startTransition(async () => {
       const result = await loginAccount(identity.trim(), password)
       if (!result.success) {
+        recordLoginHistory({
+          activityType: "Login Failed",
+          attemptedIdentifier: identity.trim(),
+          result: result.error,
+        })
         setError(result.error)
         return
       }
+      recordLoginHistory({
+        activityType: "Login",
+        account: result.data,
+        attemptedIdentifier: identity.trim(),
+        result: "Success",
+      })
       router.replace("/")
       router.refresh()
     })

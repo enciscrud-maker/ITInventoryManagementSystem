@@ -255,6 +255,10 @@ const mapImportRow = ({
       id: prefix,
       serial: `IMP-${prefix}`,
       tag: prefix,
+      categoryId: category.category_id ?? category.id,
+      groupId: group.group_id ?? group.id,
+      typeId: type.type_id ?? type.id,
+      brandId: brand.brand_id ?? brand.id,
       category: category.name,
       group: group.name,
       type: type.name,
@@ -317,12 +321,47 @@ export default function AssetInventory() {
     "location",
     "condition",
   ]
+  const selectedCategory = master.categories.find(
+    (item) => item.name === filters.category,
+  )
+  const selectedGroup = master.groups.find(
+    (item) => item.name === filters.group,
+  )
+  const selectedType = master.types.find(
+    (item) => item.name === filters.type,
+  )
+  const selectedBrand = master.brands.find(
+    (item) => item.name === filters.brand,
+  )
+  const availableGroups = master.groups.filter(
+    (item) =>
+      !selectedCategory ||
+      item.category_id === (selectedCategory.category_id ?? selectedCategory.id),
+  )
+  const availableTypes = master.types.filter(
+    (item) =>
+      !selectedGroup ||
+      item.group_id === (selectedGroup.group_id ?? selectedGroup.id),
+  )
+  const availableBrands = master.brands.filter(
+    (item) =>
+      !selectedType ||
+      !item.type_id ||
+      item.type_id === (selectedType.type_id ?? selectedType.id),
+  )
+  const availableModels = master.models.filter(
+    (item) =>
+      (!selectedType ||
+        item.type_id === (selectedType.type_id ?? selectedType.id)) &&
+      (!selectedBrand ||
+        item.brand_id === (selectedBrand.brand_id ?? selectedBrand.id)),
+  )
   const options: Record<string, string[]> = {
     category: master.categories.map((x) => x.name),
-    group: master.groups.map((x) => x.name),
-    type: master.types.map((x) => x.name),
-    brand: master.brands.map((x) => x.name),
-    model: master.models.map((x) => x.name),
+    group: availableGroups.map((x) => x.name),
+    type: availableTypes.map((x) => x.name),
+    brand: availableBrands.map((x) => x.name),
+    model: availableModels.map((x) => x.name),
     businessUnit: [
       "MBP",
       "HBI",
@@ -336,6 +375,45 @@ export default function AssetInventory() {
     ],
     location: master.locations.map((x) => x.name),
     condition: master.conditions.map((x) => x.name),
+  }
+  const changeFilter = (key: string, value: string) => {
+    setFilters((current) => {
+      if (key === "category")
+        return {
+          ...current,
+          category: value,
+          group: "",
+          type: "",
+          brand: "",
+          model: "",
+        }
+      if (key === "group")
+        return {
+          ...current,
+          group: value,
+          type: "",
+          brand: "",
+          model: "",
+        }
+      if (key === "type") {
+        const brand = master.brands.find(
+          (item) => item.name === current.brand,
+        )
+        const type = master.types.find((item) => item.name === value)
+        const keepBrand =
+          !brand?.type_id ||
+          brand.type_id === (type?.type_id ?? type?.id)
+        return {
+          ...current,
+          type: value,
+          brand: keepBrand ? current.brand : "",
+          model: "",
+        }
+      }
+      if (key === "brand") return { ...current, brand: value, model: "" }
+      return { ...current, [key]: value }
+    })
+    setPage(1)
   }
   const filtered = useMemo(
     () =>
@@ -535,10 +613,7 @@ export default function AssetInventory() {
                 key={key}
                 label={key.replace(/([A-Z])/g, " $1")}
                 value={filters[key] ?? ""}
-                onChange={(e) => {
-                  setFilters((f) => ({ ...f, [key]: e.target.value }))
-                  setPage(1)
-                }}
+                onChange={(e) => changeFilter(key, e.target.value)}
                 options={[{ value: "", label: `All ${key}` }, ...options[key]]}
               />
             ))}

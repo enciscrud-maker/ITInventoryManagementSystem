@@ -38,6 +38,62 @@ export default function Reports() {
   })
   const set = (key: string, value: string) =>
     setFilters((v) => ({ ...v, [key]: value }))
+  const selectedCategory = master.categories.find(
+    (item) => item.name === filters.category,
+  )
+  const selectedGroup = master.groups.find(
+    (item) => item.name === filters.group,
+  )
+  const selectedType = master.types.find(
+    (item) => item.name === filters.type,
+  )
+  const reportGroups = master.groups.filter(
+    (item) =>
+      !selectedCategory ||
+      item.category_id === (selectedCategory.category_id ?? selectedCategory.id),
+  )
+  const reportTypes = master.types.filter(
+    (item) =>
+      !selectedGroup ||
+      item.group_id === (selectedGroup.group_id ?? selectedGroup.id),
+  )
+  const reportBrands = master.brands.filter(
+    (item) =>
+      !selectedType ||
+      !item.type_id ||
+      item.type_id === (selectedType.type_id ?? selectedType.id),
+  )
+  const setClassificationFilter = (
+    key: "category" | "group" | "type" | "brand",
+    value: string,
+  ) =>
+    setFilters((current) => {
+      if (key === "category")
+        return {
+          ...current,
+          category: value,
+          group: "",
+          type: "",
+          brand: "",
+        }
+      if (key === "group")
+        return { ...current, group: value, type: "", brand: "" }
+      if (key === "type") {
+        const brand = master.brands.find(
+          (item) => item.name === current.brand,
+        )
+        const type = master.types.find((item) => item.name === value)
+        const keepBrand =
+          !brand?.type_id ||
+          brand.type_id === (type?.type_id ?? type?.id)
+        return {
+          ...current,
+          type: value,
+          brand: keepBrand ? current.brand : "",
+        }
+      }
+      return { ...current, brand: value }
+    })
   const filteredAssets = useMemo(
     () =>
       assets.filter((a) =>
@@ -156,7 +212,9 @@ export default function Reports() {
             <Select
               label="Category"
               value={filters.category}
-              onChange={(e) => set("category", e.target.value)}
+              onChange={(e) =>
+                setClassificationFilter("category", e.target.value)
+              }
               options={[
                 { value: "", label: "All categories" },
                 ...master.categories.map((x) => x.name),
@@ -165,28 +223,34 @@ export default function Reports() {
             <Select
               label="Group"
               value={filters.group}
-              onChange={(e) => set("group", e.target.value)}
+              onChange={(e) =>
+                setClassificationFilter("group", e.target.value)
+              }
               options={[
                 { value: "", label: "All groups" },
-                ...master.groups.map((x) => x.name),
+                ...reportGroups.map((x) => x.name),
               ]}
             />
             <Select
               label="Type"
               value={filters.type}
-              onChange={(e) => set("type", e.target.value)}
+              onChange={(e) =>
+                setClassificationFilter("type", e.target.value)
+              }
               options={[
                 { value: "", label: "All types" },
-                ...master.types.map((x) => x.name),
+                ...reportTypes.map((x) => x.name),
               ]}
             />
             <Select
               label="Brand"
               value={filters.brand}
-              onChange={(e) => set("brand", e.target.value)}
+              onChange={(e) =>
+                setClassificationFilter("brand", e.target.value)
+              }
               options={[
                 { value: "", label: "All brands" },
-                ...master.brands.map((x) => x.name),
+                ...reportBrands.map((x) => x.name),
               ]}
             />
             <Select
