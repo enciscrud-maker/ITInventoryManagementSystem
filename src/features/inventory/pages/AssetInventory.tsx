@@ -61,6 +61,36 @@ const columnKeys: Array<keyof Asset> = [
   "uom",
   "updatedAt",
 ]
+const typedFilterFields = [
+  "serial",
+  "tag",
+  "id",
+  "po",
+  "sap",
+  "value",
+  "quantity",
+  "uom",
+  "condition",
+]
+const numericFilterFields = ["value", "quantity"]
+const filterLabels: Record<string, string> = {
+  category: "Category",
+  group: "Group",
+  type: "Type",
+  brand: "Brand",
+  model: "Model",
+  serial: "Serial Number (SN)",
+  tag: "Asset Tag",
+  id: "Asset ID",
+  location: "Location",
+  businessUnit: "Business Unit",
+  po: "PO Number",
+  sap: "SAP Material ID",
+  value: "Initial Value",
+  quantity: "Quantity",
+  uom: "UOM",
+  condition: "Condition",
+}
 type SortState = {
   key: keyof Asset
   direction: 1 | -1
@@ -102,27 +132,35 @@ const findMasterReference = (
   const target = value.trim().toLowerCase()
   return items.find((item) =>
     fields.some(
-      (field) => String(item[field] ?? "").trim().toLowerCase() === target,
+      (field) =>
+        String(item[field] ?? "")
+          .trim()
+          .toLowerCase() === target,
     ),
   )
 }
 
-const resolveImportedCondition = (
-  value: string,
-  conditions: MasterItem[],
-) => {
-  const direct = findMasterReference(
-    conditions,
-    value,
-    ["id", "condition_id", "code", "status_code", "name", "condition_name"],
-  )
+const resolveImportedCondition = (value: string, conditions: MasterItem[]) => {
+  const direct = findMasterReference(conditions, value, [
+    "id",
+    "condition_id",
+    "code",
+    "status_code",
+    "name",
+    "condition_name",
+  ])
   if (direct) return direct.name
 
   const normalized = value.trim().toLowerCase()
   if (
-    ["active", "aktif", "available", "tersedia", "borrowed", "dipinjam"].includes(
-      normalized,
-    )
+    [
+      "active",
+      "aktif",
+      "available",
+      "tersedia",
+      "borrowed",
+      "dipinjam",
+    ].includes(normalized)
   )
     return "Good"
   if (
@@ -200,8 +238,7 @@ const mapImportRow = ({
 
   if (categoryCode && !category)
     errors.push(`unknown category code "${categoryCode}"`)
-  if (groupCode && !group)
-    errors.push(`unknown group code "${groupCode}"`)
+  if (groupCode && !group) errors.push(`unknown group code "${groupCode}"`)
   if (typeCode && !type) errors.push(`unknown type code "${typeCode}"`)
   if (brandCode && !brand) errors.push(`unknown brand code "${brandCode}"`)
   if (
@@ -218,11 +255,7 @@ const mapImportRow = ({
     type.group_id !== (group.group_id ?? group.id)
   )
     errors.push("type does not belong to the selected group")
-  if (
-    type &&
-    brand?.type_id &&
-    brand.type_id !== (type.type_id ?? type.id)
-  )
+  if (type && brand?.type_id && brand.type_id !== (type.type_id ?? type.id))
     errors.push("brand does not belong to the selected type")
   if (assetStatus && !condition)
     errors.push(`unsupported asset_status "${assetStatus}"`)
@@ -234,14 +267,7 @@ const mapImportRow = ({
   if (prefix && (prefixes.get(prefix) ?? 0) > 1)
     errors.push(`duplicate asset_prefix "${assetPrefix}" in file`)
 
-  if (
-    errors.length ||
-    !category ||
-    !group ||
-    !type ||
-    !brand ||
-    !condition
-  )
+  if (errors.length || !category || !group || !type || !brand || !condition)
     return { row: index + 2, source: row, errors }
 
   const defaultLocation = master.locations[0]?.name ?? "Unassigned"
@@ -270,11 +296,7 @@ const mapImportRow = ({
       quantity: 1,
       uom: "UNIT",
       updatedAt: today(),
-      description: [
-        assetName,
-        assetType,
-        `Imported status: ${assetStatus}`,
-      ]
+      description: [assetName, assetType, `Imported status: ${assetStatus}`]
         .filter(Boolean)
         .join(" · "),
       demo: false,
@@ -317,8 +339,16 @@ export default function AssetInventory() {
     "type",
     "brand",
     "model",
-    "businessUnit",
+    "serial",
+    "tag",
+    "id",
     "location",
+    "businessUnit",
+    "po",
+    "sap",
+    "value",
+    "quantity",
+    "uom",
     "condition",
   ]
   const selectedCategory = master.categories.find(
@@ -327,16 +357,15 @@ export default function AssetInventory() {
   const selectedGroup = master.groups.find(
     (item) => item.name === filters.group,
   )
-  const selectedType = master.types.find(
-    (item) => item.name === filters.type,
-  )
+  const selectedType = master.types.find((item) => item.name === filters.type)
   const selectedBrand = master.brands.find(
     (item) => item.name === filters.brand,
   )
   const availableGroups = master.groups.filter(
     (item) =>
       !selectedCategory ||
-      item.category_id === (selectedCategory.category_id ?? selectedCategory.id),
+      item.category_id ===
+        (selectedCategory.category_id ?? selectedCategory.id),
   )
   const availableTypes = master.types.filter(
     (item) =>
@@ -356,6 +385,8 @@ export default function AssetInventory() {
       (!selectedBrand ||
         item.brand_id === (selectedBrand.brand_id ?? selectedBrand.id)),
   )
+  const uniqueValues = (key: keyof Asset) =>
+    Array.from(new Set(assets.map((a) => String(a[key] ?? "")).filter(Boolean)))
   const options: Record<string, string[]> = {
     category: master.categories.map((x) => x.name),
     group: availableGroups.map((x) => x.name),
@@ -374,7 +405,15 @@ export default function AssetInventory() {
       "IBT",
     ],
     location: master.locations.map((x) => x.name),
-    condition: master.conditions.map((x) => x.name),
+    serial: uniqueValues("serial"),
+    tag: uniqueValues("tag"),
+    id: uniqueValues("id"),
+    po: uniqueValues("po"),
+    sap: uniqueValues("sap"),
+    value: uniqueValues("value"),
+    quantity: uniqueValues("quantity"),
+    uom: uniqueValues("uom"),
+    condition: uniqueValues("condition"),
   }
   const changeFilter = (key: string, value: string) => {
     setFilters((current) => {
@@ -396,13 +435,10 @@ export default function AssetInventory() {
           model: "",
         }
       if (key === "type") {
-        const brand = master.brands.find(
-          (item) => item.name === current.brand,
-        )
+        const brand = master.brands.find((item) => item.name === current.brand)
         const type = master.types.find((item) => item.name === value)
         const keepBrand =
-          !brand?.type_id ||
-          brand.type_id === (type?.type_id ?? type?.id)
+          !brand?.type_id || brand.type_id === (type?.type_id ?? type?.id)
         return {
           ...current,
           type: value,
@@ -419,17 +455,39 @@ export default function AssetInventory() {
     () =>
       assets
         .filter((a) => {
-          const q = search.toLowerCase()
-          const searchable = [a.id, a.serial, a.tag, a.model, a.brand, a.sap]
+          const q = search.toLowerCase().split(/\s+/).filter(Boolean)
+          const searchable = [
+            a.category,
+            a.group,
+            a.type,
+            a.brand,
+            a.model,
+            a.serial,
+            a.tag,
+            a.id,
+            a.location,
+            a.businessUnit,
+            a.po,
+            a.sap,
+            a.value,
+            a.quantity,
+            a.uom,
+            a.condition,
+          ]
             .join(" ")
             .toLowerCase()
           return (
-            (!q || searchable.includes(q)) &&
+            (!q.length || q.every((word) => searchable.includes(word))) &&
             (businessUnit === "All Business Units" ||
               a.businessUnit === businessUnit) &&
-            Object.entries(filters).every(
-              ([k, v]) => !v || String(a[(k as keyof Asset)]) === v,
-            )
+            Object.entries(filters).every(([k, v]) => {
+              if (!v) return true
+              const field = String(a[(k as keyof Asset)] ?? "")
+              if (numericFilterFields.includes(k)) return field === v.trim()
+              if (typedFilterFields.includes(k))
+                return field.toLowerCase().includes(v.trim().toLowerCase())
+              return field === v
+            })
           )
         })
         .sort(
@@ -496,7 +554,9 @@ export default function AssetInventory() {
     if (!validImports.length) return
     importAssets(validImports)
     notify(
-      `${validImports.length} assets imported${importErrors.length ? `; ${importErrors.length} rows skipped` : ""}`,
+      `${validImports.length} assets imported${
+        importErrors.length ? `; ${importErrors.length} rows skipped` : ""
+      }`,
     )
     setImportOpen(false)
     setImportRows([])
@@ -521,7 +581,7 @@ export default function AssetInventory() {
             setSearch(e.target.value)
             setPage(1)
           }}
-          placeholder="Asset ID, serial, model, brand, SAP ID..."
+          placeholder="Search all asset fields..."
         />
         <Button
           variant="secondary"
@@ -591,7 +651,7 @@ export default function AssetInventory() {
                 key={k}
                 onClick={() => setFilters((f) => ({ ...f, [k]: "" }))}
               >
-                {k}: {v} ×
+                {filterLabels[k] ?? k}: {v} ×
               </button>
             ))}
           <Button size="sm" variant="ghost" onClick={() => setFilters({})}>
@@ -601,21 +661,42 @@ export default function AssetInventory() {
       )}
       <div className="inventory-layout">
         {filtersOpen && (
-          <aside className="filter-panel">
+          <aside className="filter-panel max-h-[calc(100vh-180px)] overflow-y-auto">
             <div>
               <strong>Filters</strong>
               <Button size="sm" variant="ghost" onClick={() => setFilters({})}>
                 Clear all
               </Button>
             </div>
-            {filterFields.map((key) => (
-              <Select
-                key={key}
-                label={key.replace(/([A-Z])/g, " $1")}
-                value={filters[key] ?? ""}
-                onChange={(e) => changeFilter(key, e.target.value)}
-                options={[{ value: "", label: `All ${key}` }, ...options[key]]}
-              />
+            {filterFields.map((key) =>
+              typedFilterFields.includes(key) ? (
+                <Input
+                  key={key}
+                  label={filterLabels[key]}
+                  list={`filter-list-${key}`}
+                  value={filters[key] ?? ""}
+                  placeholder={`All ${filterLabels[key]}`}
+                  onChange={(e) => changeFilter(key, e.target.value)}
+                />
+              ) : (
+                <Select
+                  key={key}
+                  label={filterLabels[key]}
+                  value={filters[key] ?? ""}
+                  onChange={(e) => changeFilter(key, e.target.value)}
+                  options={[
+                    { value: "", label: `All ${filterLabels[key]}` },
+                    ...options[key],
+                  ]}
+                />
+              ),
+            )}
+            {typedFilterFields.map((key) => (
+              <datalist key={key} id={`filter-list-${key}`}>
+                {options[key].map((x) => (
+                  <option key={x} value={x} />
+                ))}
+              </datalist>
             ))}
           </aside>
         )}
@@ -873,10 +954,7 @@ export default function AssetInventory() {
             <Button variant="secondary" onClick={() => setImportOpen(false)}>
               Cancel
             </Button>
-            <Button
-              disabled={!validImports.length}
-              onClick={commitImport}
-            >
+            <Button disabled={!validImports.length} onClick={commitImport}>
               Import {validImports.length} valid rows
             </Button>
           </div>

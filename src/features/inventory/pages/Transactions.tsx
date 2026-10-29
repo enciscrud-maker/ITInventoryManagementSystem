@@ -109,6 +109,24 @@ const generateDocumentNumber = (
   return document
 }
 
+const generateRequestNumber = (
+  businessUnit: string,
+  issueDate: string,
+  existing: Transaction[],
+) => {
+  const [year = "", month = "", day = ""] = issueDate.split("-")
+  if (!businessUnit || !year || !month || !day) return ""
+  const base = `${businessUnit}/${day}/${month}/${year.slice(-2)}`
+  const taken = new Set(existing.map((item) => item.requestNumber))
+  let sequence = 1
+  let requestNumber = base
+  while (taken.has(requestNumber)) {
+    sequence += 1
+    requestNumber = `${base}-${sequence}`
+  }
+  return requestNumber
+}
+
 const totalAssets = (transaction: Transaction) =>
   transaction.assets?.length
     ? transaction.assets.reduce((sum, item) => sum + item.quantity, 0)
@@ -173,9 +191,6 @@ function TransactionSummary({
           </SummaryField>
           <SummaryField label="Business Unit">
             {transaction.businessUnit}
-          </SummaryField>
-          <SummaryField label="Request Date">
-            {formatDate(transaction.requestDate ?? transaction.date)}
           </SummaryField>
           <SummaryField label="Form Issue Date">
             {formatDate(transaction.formIssueDate ?? transaction.date)}
@@ -337,6 +352,7 @@ export default function Transactions({
   const [nextStatus, setNextStatus] =
     useState<TransactionStatus>("In Progress")
   const [statusNotes, setStatusNotes] = useState("")
+  const [monthFilter, setMonthFilter] = useState(today().slice(0, 7))
 
   const filtered = useMemo(
     () =>
@@ -371,7 +387,7 @@ export default function Transactions({
   const rows = filtered.slice((page - 1) * 10, page * 10)
   const month = filtered.filter(
     (transaction) =>
-      transaction.date.slice(0, 7) === today().slice(0, 7),
+      transaction.date.slice(0, 7) === monthFilter,
   )
   const selectedTransaction = transactions.find(
     (transaction) => transaction.id === selectedId,
@@ -456,7 +472,6 @@ export default function Transactions({
       if (
         !form.document ||
         !form.businessUnit ||
-        !form.requestDate ||
         !form.formIssueDate ||
         !form.party.name.trim() ||
         !form.party.nik.trim() ||
@@ -532,12 +547,16 @@ export default function Transactions({
       user: form.party.name,
       po: firstAsset.referenceNumber,
       notes: form.inventoryNotes,
-      requestDate: form.requestDate,
+      requestDate: form.formIssueDate,
       formIssueDate: form.formIssueDate,
       party: form.party,
       assets: form.assets,
       supportingDocuments: form.supportingDocuments,
-      requestNumber: form.requestNumber,
+      requestNumber: generateRequestNumber(
+          form.businessUnit,
+          form.formIssueDate,
+          transactions,
+        ),
       approverName: form.approverName,
       inventoryNotes: form.inventoryNotes,
       statusHistory: [],
@@ -587,11 +606,15 @@ export default function Transactions({
         status: "In Progress",
         user: form.party.name,
         party: form.party,
-        requestDate: form.requestDate,
+        requestDate: form.formIssueDate,
         formIssueDate: form.formIssueDate,
         assets: form.assets,
         supportingDocuments: form.supportingDocuments,
-        requestNumber: form.requestNumber,
+        requestNumber: generateRequestNumber(
+          form.businessUnit,
+          form.formIssueDate,
+          transactions,
+        ),
         approverName: form.approverName,
         inventoryNotes: form.inventoryNotes,
         statusHistory: [],
@@ -614,7 +637,7 @@ export default function Transactions({
         }
       />
 
-      <div className="stat-grid compact-stats">
+      <div className="stat-grid compact-stats grid-cols-3! max-[780px]:grid-cols-2!">
         <StatCard
           label="Total transactions"
           value={filtered.length}
@@ -626,21 +649,28 @@ export default function Transactions({
           label="This month"
           value={month.length}
           icon={<Clock size={19} />}
+          action={
+            <input
+              type="month"
+              aria-label="Select month and year"
+              value={monthFilter}
+              onChange={(event) => {
+                if (event.target.value) setMonthFilter(event.target.value)
+              }}
+              className="min-h-8 w-full rounded-[7px] border border-[color:var(--border)] bg-[color:var(--surface)] px-2 py-1 text-xs text-[color:var(--text)] outline-0 focus:border-[color:var(--primary)] focus:ring-2 focus:ring-[color:var(--primary-light)]"
+            />
+          }
         />
         <StatCard
-          label="In Progress"
-          value={
+          label="Status"
+          value={`${
             filtered.filter((transaction) => transaction.status === "In Progress")
               .length
-          }
-          icon={<Clock size={19} />}
-        />
-        <StatCard
-          label="Total assets"
-          value={filtered.reduce(
-            (sum, transaction) => sum + totalAssets(transaction),
-            0,
-          )}
+          } In Progress`}
+          note={`${
+            filtered.filter((transaction) => transaction.status === "Completed")
+              .length
+          } Completed`}
           icon={<Boxes size={19} />}
         />
       </div>
@@ -786,14 +816,6 @@ export default function Transactions({
                     setFormValue("businessUnit", event.target.value)
                   }
                   options={businessUnits}
-                />
-                <Input
-                  label="Request Date *"
-                  type="date"
-                  value={form.requestDate}
-                  onChange={(event) =>
-                    setFormValue("requestDate", event.target.value)
-                  }
                 />
                 <Input
                   label="Form Issue Date *"
@@ -1120,10 +1142,12 @@ export default function Transactions({
                 />
                 <Input
                   label="Request Number"
-                  value={form.requestNumber}
-                  onChange={(event) =>
-                    setFormValue("requestNumber", event.target.value)
-                  }
+                  value={generateRequestNumber(
+                    form.businessUnit,
+                    form.formIssueDate,
+                    transactions,
+                  )}
+                  readOnly
                 />
                 <Input
                   label={

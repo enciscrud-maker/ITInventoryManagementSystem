@@ -444,11 +444,13 @@ export function StatCard({
   value,
   icon,
   note,
+  action,
 }: {
   label: string
   value: string | number
   icon: React.ReactNode
   note?: string
+  action?: React.ReactNode
 }) {
   return (
     <article className="stat-card">
@@ -456,6 +458,7 @@ export function StatCard({
         <span>{label}</span>
         <strong>{value}</strong>
         {note && <small>{note}</small>}
+        {action}
       </div>
       <i className="stat-icon">{icon}</i>
     </article>
