@@ -96,14 +96,34 @@ export type Transaction = {
   inventoryAdjustedAt?: string
 }
 
+export type AuditScanEntry = {
+  id: string
+  assetId: string
+  code: string
+  qty: number
+  source: "scan" | "import"
+  timestamp: string
+  actor: string
+}
+
 export type AuditItem = {
   assetId: string
+  /** Snapshot of the asset quantity when the session was created. */
+  systemQty?: number
+  /** Snapshot of the asset location when the session was created. */
+  systemLocation?: string
+  /** null = not counted yet (Unverified). */
   physicalQty: number | null
   actualLocation: string
   finding: string
   confirmed: boolean
+  confirmedBy?: string
+  confirmedAt?: string
   notes: string
-  evidence?: string
+  /** Compressed image data URLs. */
+  evidence?: string[]
+  /** Filled when the session is completed and inventory is adjusted. */
+  adjustment?: { before: number, after: number }
 }
 
 export type Audit = {
@@ -115,6 +135,10 @@ export type Audit = {
   location: string
   status: string
   items: AuditItem[]
+  scanLog?: AuditScanEntry[]
+  completedAt?: string
+  completedBy?: string
+  inventoryAdjusted?: boolean
 }
 
 export type MasterItem = {

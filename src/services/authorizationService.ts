@@ -1,10 +1,22 @@
 import type { AccountRole, PublicAccount } from "@/auth/types"
 
-export type PermissionAction = "view" | "create" | "update" | "delete"
+export type PermissionAction = "view" | "create" | "update" | "delete" | "approve"
 
 const permissions: Record<AccountRole, Record<PermissionAction, boolean>> = {
-  Admin: { view: true, create: true, update: true, delete: true },
-  Member: { view: true, create: true, update: true, delete: false },
+  Admin: {
+    view: true,
+    create: true,
+    update: true,
+    delete: true,
+    approve: true,
+  },
+  Member: {
+    view: true,
+    create: true,
+    update: true,
+    delete: false,
+    approve: false,
+  },
 }
 
 export function canPerformAction(
@@ -25,3 +37,6 @@ export const canUpdate = (
 export const canDelete = (
   user: Pick<PublicAccount, "role"> | null | undefined,
 ) => canPerformAction(user, "delete")
+export const canApprove = (
+  user: Pick<PublicAccount, "role"> | null | undefined,
+) => canPerformAction(user, "approve")

@@ -72,7 +72,8 @@ export function calculateFinding(
 ) {
   if (duplicate) return "Double"
   if (physicalQty === null) return "Unverified"
-  if (physicalQty === 0) return "Fisik tidak ada"
+  // System says the asset exists but nothing was found in the warehouse.
+  if (physicalQty === 0 && systemQty > 0) return "Fisik tidak ada"
   if (
     physicalQty !== systemQty ||
     (actualLocation && actualLocation !== systemLocation)
