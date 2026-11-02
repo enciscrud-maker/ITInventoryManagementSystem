@@ -6,6 +6,7 @@ import { useInventory } from "@/context/InventoryContext"
 import { useAuth } from "@/auth/AuthContext"
 import { canCreateInModule } from "@/services/authorizationService"
 import { downloadCsv, formatDate } from "@/utils/helpers"
+import { getLocationsForBusinessUnit } from "@/utils/masterData"
 import {
   Badge,
   Button,
@@ -42,7 +43,11 @@ export default function Reports() {
     transactionType: "",
   })
   const set = (key: string, value: string) =>
-    setFilters((v) => ({ ...v, [key]: value }))
+    setFilters((v) => ({
+      ...v,
+      [key]: value,
+      ...(key === "businessUnit" ? { location: "" } : {}),
+    }))
   const selectedCategory = master.categories.find(
     (item) => item.name === filters.category,
   )
@@ -102,12 +107,18 @@ export default function Reports() {
   const filteredAssets = useMemo(
     () =>
       assets.filter((a) =>
+        (filters.businessUnit === "All Business Units" ||
+          !filters.businessUnit ||
+          a.businessUnitId === filters.businessUnit) &&
         Object.entries(filters).every(
           ([k, v]) =>
             !v ||
             v === "All Business Units" ||
+            k === "businessUnit" ||
             k === "transactionType" ||
-            String(a[(k as keyof typeof a)]) === v,
+            (k === "location"
+              ? a.locationId === v
+              : String(a[(k as keyof typeof a)]) === v),
         ),
       ),
     [assets, filters],
@@ -116,7 +127,8 @@ export default function Reports() {
     (t) =>
       (!filters.businessUnit ||
         filters.businessUnit === "All Business Units" ||
-        t.businessUnit === filters.businessUnit) &&
+        t.businessUnitId === filters.businessUnit) &&
+      (!filters.location || t.locationId === filters.location) &&
       (!filters.transactionType || t.type === filters.transactionType),
   )
   const groups = Object.entries(
@@ -133,16 +145,41 @@ export default function Reports() {
     }, {}),
   ).map(([label, quantity]) => ({ label, quantity }))
   const discrepancies = audits
+    .filter(
+      (audit) =>
+        (!filters.businessUnit ||
+          filters.businessUnit === "All Business Units" ||
+          audit.businessUnitId === filters.businessUnit) &&
+        (!filters.location ||
+          audit.locationId === filters.location ||
+          audit.items.some(
+            (item) =>
+              item.systemLocationId === filters.location ||
+              item.actualLocationId === filters.location,
+          )),
+    )
     .flatMap((a) =>
       a.items.map((i) => ({
         session: a.name,
         assetId: i.assetId,
         finding: i.finding,
         businessUnit: a.businessUnit,
+        businessUnitId: a.businessUnitId,
+        location: i.actualLocation,
+        locationId: i.actualLocationId,
+        systemLocation: i.systemLocation,
+        systemLocationId: i.systemLocationId,
         notes: i.notes,
       })),
     )
-    .filter((i) => i.finding !== "Match" && i.finding !== "Unverified")
+    .filter(
+      (i) =>
+        i.finding !== "Match" &&
+        i.finding !== "Unverified" &&
+        (!filters.location ||
+          i.locationId === filters.location ||
+          i.systemLocationId === filters.location),
+    )
   const tableRows: Record<string, unknown>[] =
     report.includes("Monthly Goods") || report === "Asset Movement History"
       ? filteredTx
@@ -213,16 +250,11 @@ export default function Reports() {
               value={filters.businessUnit}
               onChange={(e) => set("businessUnit", e.target.value)}
               options={[
-                "All Business Units",
-                "MBP",
-                "HBI",
-                "AL",
-                "SMT",
-                "BGN",
-                "PBMM",
-                "IMPT",
-                "SDM",
-                "IBT",
+                { value: "All Business Units", label: "All Business Units" },
+                ...master.businessUnits.map((unit) => ({
+                  value: unit.id,
+                  label: unit.name,
+                })),
               ]}
             />
             <Select
@@ -275,7 +307,16 @@ export default function Reports() {
               onChange={(e) => set("location", e.target.value)}
               options={[
                 { value: "", label: "All locations" },
-                ...master.locations.map((x) => x.name),
+                ...(filters.businessUnit === "All Business Units"
+                  ? master.locations
+                  : getLocationsForBusinessUnit(
+                      master.locations,
+                      filters.businessUnit,
+                    )
+                ).map((location) => ({
+                  value: location.id,
+                  label: location.name,
+                })),
               ]}
             />
             <Select

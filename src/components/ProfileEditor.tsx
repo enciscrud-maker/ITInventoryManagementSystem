@@ -5,7 +5,7 @@ import Image from "next/image"
 import { Camera, Trash2 } from "lucide-react"
 import { useAuth } from "../auth/AuthContext"
 import { updateProfile, uploadProfilePhoto } from "../auth/client"
-import { businessUnits } from "../data/demoData"
+import { useInventory } from "../context/InventoryContext"
 import { Button, Input, Modal, Select } from "./ui"
 import {
   recordDataActivity,
@@ -20,6 +20,7 @@ export function ProfileEditor({
   onClose: () => void
 }) {
   const { currentUser, refreshCurrentUser } = useAuth()
+  const { master } = useInventory()
   const [form, setForm] = useState(currentUser)
   const [photo, setPhoto] = useState<File | null>(null)
   const [preview, setPreview] = useState("")
@@ -187,7 +188,7 @@ export function ProfileEditor({
           onChange={(event) =>
             setForm({ ...form, business_unit: event.target.value })
           }
-          options={businessUnits}
+          options={master.businessUnits.map((unit) => unit.name)}
         />
       </div>
       <div className="form-actions">

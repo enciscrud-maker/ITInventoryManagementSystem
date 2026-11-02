@@ -15,7 +15,9 @@ export type Asset = {
   brand: string
   model: string
   location: string
+  locationId?: string
   businessUnit: string
+  businessUnitId?: string
   condition: string
   quantity: number
   uom: string
@@ -78,7 +80,9 @@ export type Transaction = {
   type: string
   quantity: number
   location: string
+  locationId?: string
   businessUnit: string
+  businessUnitId?: string
   status: TransactionStatus
   user: string
   po?: string
@@ -112,9 +116,11 @@ export type AuditItem = {
   systemQty?: number
   /** Snapshot of the asset location when the session was created. */
   systemLocation?: string
+  systemLocationId?: string
   /** null = not counted yet (Unverified). */
   physicalQty: number | null
   actualLocation: string
+  actualLocationId?: string
   finding: string
   confirmed: boolean
   confirmedBy?: string
@@ -132,7 +138,9 @@ export type Audit = {
   date: string
   auditor: string
   businessUnit: string
+  businessUnitId?: string
   location: string
+  locationId?: string
   status: string
   items: AuditItem[]
   scanLog?: AuditScanEntry[]
@@ -167,6 +175,8 @@ export type MasterItem = {
   location_name?: string
   location_code?: string
   business_unit?: string
+  businessUnitId?: string
+  business_unit_id?: string
   condition_id?: string
   condition_name?: string
   status_code?: string
@@ -193,6 +203,15 @@ export const locations = [
 
 export const demoMaster: Record<string, MasterItem[]> = {
   ...canonicalMasterSeed,
+  businessUnits: businessUnits.map((name, i) => ({
+    id: String(i + 1),
+    name,
+    code: name
+      .split(/\s+/)
+      .filter(Boolean)
+      .map((word) => word[0].toUpperCase())
+      .join(""),
+  })),
   locations: locations.map((name, i) => ({
     id: `l${String(i + 1).padStart(4, "0")}`,
     name,

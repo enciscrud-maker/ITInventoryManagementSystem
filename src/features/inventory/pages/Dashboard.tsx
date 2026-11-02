@@ -50,7 +50,7 @@ export default function Dashboard() {
       assets.filter(
         (asset) =>
           businessUnit === "All Business Units" ||
-          asset.businessUnit === businessUnit,
+          asset.businessUnitId === businessUnit,
       ),
     [assets, businessUnit],
   )
@@ -59,7 +59,7 @@ export default function Dashboard() {
       transactions.filter(
         (transaction) =>
           businessUnit === "All Business Units" ||
-          transaction.businessUnit === businessUnit,
+          transaction.businessUnitId === businessUnit,
       ),
     [businessUnit, transactions],
   )

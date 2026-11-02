@@ -1,6 +1,14 @@
 import { demoMaster, type Asset, type MasterItem } from "../data/demoData"
 
-export type MasterKey = "categories" | "groups" | "types" | "brands" | "models" | "locations" | "conditions"
+export type MasterKey =
+  | "categories"
+  | "groups"
+  | "types"
+  | "brands"
+  | "models"
+  | "businessUnits"
+  | "locations"
+  | "conditions"
 
 export type ValidationResult = {
   valid: boolean
@@ -17,12 +25,15 @@ const idConfig: Record<MasterKey, {
   types: { prefix: "t", field: "type_id", pattern: /^t\d{4}$/ },
   brands: { prefix: "b", field: "brand_id", pattern: /^b\d{4}$/ },
   models: { prefix: "m", field: "model_id", pattern: /^m\d{4}$/ },
-  locations: { prefix: "l", field: "location_id", pattern: /^l\d{4}$/ },
+  businessUnits: { prefix: "", field: "id", pattern: /^\d+$/ },
+  locations: { prefix: "", field: "location_id", pattern: /^(?:l)?\d+$/ },
   conditions: { prefix: "s", field: "condition_id", pattern: /^s\d{4}$/ },
 }
 
 const normalize = (value: string) => value.trim().toLocaleLowerCase()
 const historyKey = "iti-master-id-history"
+const deletedBusinessUnitsKey = "iti-deleted-business-units"
+const deletedLocationsKey = "iti-deleted-locations"
 
 function idHistory() {
   if (typeof localStorage === "undefined") return [] as string[]
@@ -32,6 +43,28 @@ function idHistory() {
     return []
   }
 }
+
+function deletedIds(key: string) {
+  if (typeof localStorage === "undefined") return [] as string[]
+  try {
+    const stored = JSON.parse(localStorage.getItem(key) ?? "[]")
+    return Array.isArray(stored) ? stored.filter((id) => typeof id === "string") : []
+  } catch {
+    return []
+  }
+}
+
+function reserveDeletedId(key: string, id: string) {
+  if (typeof localStorage === "undefined") return
+  const deleted = new Set(deletedIds(key))
+  deleted.add(id)
+  localStorage.setItem(key, JSON.stringify([...deleted]))
+}
+
+export const reserveDeletedBusinessUnit = (id: string) =>
+  reserveDeletedId(deletedBusinessUnitsKey, id)
+export const reserveDeletedLocation = (id: string) =>
+  reserveDeletedId(deletedLocationsKey, id)
 
 export function reserveMasterId(id: string) {
   if (typeof localStorage === "undefined") return
@@ -47,11 +80,12 @@ export function generateMasterId(items: MasterItem[], key: MasterKey) {
     ...idHistory(),
   ]
   const max = ids.reduce((current, id) => {
-    return pattern.test(id)
-      ? Math.max(current, Number(id.slice(prefix.length)))
+    const sequence = id.match(/\d+$/)?.[0]
+    return pattern.test(id) && sequence
+      ? Math.max(current, Number(sequence))
       : current
   }, 0)
-  return `${prefix}${String(max + 1).padStart(4, "0")}`
+  return `${prefix}${String(max + 1).padStart(prefix ? 4 : 1, "0")}`
 }
 
 export const generateCategoryId = (items: MasterItem[]) =>
@@ -66,6 +100,61 @@ export const generateGroupCode = (name: string) => {
   return (
     words.length > 1 ? `${words[0][0]}${words[1][0]}` : words[0].slice(0, 2)
   ).toUpperCase()
+}
+export const generateBusinessUnitCode = (name: string) =>
+  name
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word[0].toLocaleUpperCase())
+    .join("")
+
+export function getBusinessUnitByValue(
+  businessUnits: MasterItem[],
+  value: string | undefined,
+) {
+  const normalized = normalize(value ?? "")
+  if (!normalized) return undefined
+  return businessUnits.find(
+    (unit) =>
+      normalize(unit.id) === normalized ||
+      normalize(unit.name) === normalized ||
+      normalize(unit.code) === normalized,
+  )
+}
+
+export function getLocationsForBusinessUnit(
+  locations: MasterItem[],
+  businessUnitId: string,
+) {
+  return locations.filter(
+    (location) => location.businessUnitId === businessUnitId,
+  )
+}
+
+export function normalizeBusinessUnitLocation<
+  T extends BusinessUnitLocationReference,
+>(
+  record: T,
+  master: Record<string, MasterItem[]>,
+): T {
+  const businessUnit =
+    master.businessUnits?.find((unit) => unit.id === record.businessUnitId) ??
+    getBusinessUnitByValue(master.businessUnits ?? [], record.businessUnit)
+  const location = businessUnit
+    ? getLocationsForBusinessUnit(master.locations ?? [], businessUnit.id).find(
+        (candidate) =>
+          candidate.id === record.locationId ||
+          normalize(candidate.name) === normalize(record.location ?? ""),
+      )
+    : undefined
+  return {
+    ...record,
+    businessUnitId: businessUnit?.id,
+    businessUnit: businessUnit?.name ?? record.businessUnit,
+    locationId: location?.id,
+    location: location?.name ?? record.location,
+  }
 }
 
 export function resolveCategoryById(
@@ -391,6 +480,34 @@ function canonicalId(
     : generateMasterId([...demoMaster[key], ...items], key)
 }
 
+export type BusinessUnitLocationReference = {
+  businessUnit?: string
+  businessUnitId?: string
+  location?: string
+  locationId?: string
+}
+
+export type MasterDataMigrationReferences = {
+  assets?: BusinessUnitLocationReference[]
+  transactions?: BusinessUnitLocationReference[]
+  audits?: BusinessUnitLocationReference[]
+}
+
+function sequentialId(
+  item: MasterItem | undefined,
+  items: MasterItem[],
+  key: "businessUnits" | "locations",
+) {
+  const config = idConfig[key]
+  const candidate = String(item?.[config.field] ?? item?.id ?? "")
+  if (
+    config.pattern.test(candidate) &&
+    !items.some((entry) => entry.id === candidate)
+  )
+    return candidate
+  return generateMasterId(items, key)
+}
+
 function mergeByName(
   source: MasterItem[],
   seeds: MasterItem[],
@@ -428,6 +545,7 @@ function mergeByName(
 
 export function migrateMasterData(
   source: Record<string, MasterItem[]>,
+  references: MasterDataMigrationReferences = {},
 ): Record<string, MasterItem[]> {
   const categories = mergeByName(
     Array.isArray(source.categories) ? source.categories : [],
@@ -579,22 +697,191 @@ export function migrateMasterData(
       `${normalize(item.model_name ?? item.name)}|${item.brand_id ?? normalize(item.brand_name ?? item.parent ?? "")}`,
   )
 
-  const locations = mergeByName(
-    Array.isArray(source.locations) ? source.locations : [],
-    demoMaster.locations,
-    (item, seed, result) => {
-      const id = canonicalId(item, seed, result, "locations")
-      return {
-        ...item,
-        id,
-        name: (item.location_name ?? item.name).trim(),
-        code: item.location_code ?? item.code,
-        location_id: id,
-        location_name: (item.location_name ?? item.name).trim(),
-        location_code: item.location_code ?? item.code,
-      }
-    },
+  const businessUnits: MasterItem[] = []
+  const addBusinessUnit = (nameValue: unknown, record?: MasterItem) => {
+    const name = String(
+      nameValue ?? record?.name ?? record?.business_unit ?? "",
+    ).trim()
+    if (!name) return undefined
+    const sameId = record?.id
+      ? businessUnits.find((unit) => unit.id === record.id)
+      : undefined
+    if (sameId) return sameId
+    const existing = businessUnits.find(
+      (unit) => normalize(unit.name) === normalize(name),
+    )
+    if (existing) return existing
+    const id = sequentialId(record, businessUnits, "businessUnits")
+    const unit = { id, name, code: generateBusinessUnitCode(name) }
+    businessUnits.push(unit)
+    return unit
+  }
+  const sourceBusinessUnits = Array.isArray(source.businessUnits)
+    ? source.businessUnits
+    : []
+  const deletedBusinessUnits = new Set(deletedIds(deletedBusinessUnitsKey))
+  sourceBusinessUnits.forEach((unit) => {
+    if (!deletedBusinessUnits.has(String(unit.id ?? "")))
+      addBusinessUnit(unit.name ?? unit.business_unit ?? unit.code, unit)
+  })
+  demoMaster.businessUnits.forEach((unit) => {
+    if (!deletedBusinessUnits.has(unit.id)) addBusinessUnit(unit.name, unit)
+  })
+
+  const sourceLocations = Array.isArray(source.locations)
+    ? source.locations
+    : []
+  const deletedLocationIds = new Set(deletedIds(deletedLocationsKey))
+  const activeSourceLocations = sourceLocations.filter(
+    (item) =>
+      !deletedLocationIds.has(
+        String(item.location_id ?? item.id ?? ""),
+      ),
   )
+  const allLocationRows = [
+    ...activeSourceLocations,
+    ...demoMaster.locations.filter(
+      (seed) =>
+        !deletedLocationIds.has(seed.id) &&
+        !activeSourceLocations.some(
+          (item) =>
+            item.id === seed.id ||
+            normalize(
+              String(item.location_name ?? item.name ?? ""),
+            ) === normalize(seed.name),
+        ),
+    ),
+  ]
+  allLocationRows.forEach((location) => {
+    const legacyUnit =
+      location.business_unit ??
+      (location as MasterItem & { businessUnit?: string }).businessUnit
+    if (legacyUnit) addBusinessUnit(legacyUnit)
+  })
+
+  const allReferences = [
+    ...(references.assets ?? []),
+    ...(references.transactions ?? []),
+    ...(references.audits ?? []),
+  ]
+  allReferences.forEach((reference) => {
+    if (reference.businessUnit) addBusinessUnit(reference.businessUnit)
+  })
+  if (!businessUnits.length) addBusinessUnit("Legacy")
+
+  const resolveUnitId = (reference: BusinessUnitLocationReference) =>
+    (reference.businessUnitId &&
+      businessUnits.find((unit) => unit.id === reference.businessUnitId)?.id) ||
+    getBusinessUnitByValue(businessUnits, reference.businessUnit)?.id
+  const locationName = (item: MasterItem) =>
+    String(item.location_name ?? item.name ?? "").trim()
+  const sourceLocationId = (item: MasterItem) =>
+    String(item.location_id ?? item.id ?? "")
+  const locations: MasterItem[] = []
+  const addLocation = (
+    item: MasterItem | undefined,
+    nameValue: string,
+    businessUnitId: string,
+  ) => {
+    const name = nameValue.trim()
+    if (!name || !businessUnitId) return undefined
+    const existing = locations.find(
+      (location) =>
+        location.businessUnitId === businessUnitId &&
+        normalize(location.name) === normalize(name),
+    )
+    if (existing) return existing
+
+    const id = sequentialId(item, locations, "locations")
+    const legacyFields = item as
+      | (MasterItem & { business_unit?: string })
+      | undefined
+    const { business_unit: _legacyBusinessUnit, ...locationData } =
+      legacyFields ?? { id, name, code: "" }
+    const location: MasterItem = {
+      ...locationData,
+      id,
+      name,
+      code: item?.location_code ?? item?.code ?? "",
+      location_id: id,
+      location_name: name,
+      ...(item?.location_code || item?.code
+        ? { location_code: item.location_code ?? item.code }
+        : {}),
+      businessUnitId,
+    }
+    locations.push(location)
+    return location
+  }
+
+  const knownLocationReferences = [
+    ...(references.assets ?? []),
+    ...(references.audits ?? []),
+    ...(references.transactions ?? []).filter((reference) =>
+      allLocationRows.some(
+        (item) =>
+          normalize(locationName(item)) ===
+            normalize(reference.location ?? "") ||
+          sourceLocationId(item) === reference.locationId,
+      ),
+    ),
+  ]
+  const legacyBusinessUnit = () =>
+    businessUnits.find((unit) => normalize(unit.name) === "legacy") ??
+    addBusinessUnit("Legacy")
+
+  allLocationRows.forEach((item) => {
+    const name = locationName(item)
+    if (!name) return
+    const explicitId = item.businessUnitId ?? item.business_unit_id
+    const directId =
+      (explicitId &&
+        businessUnits.find((unit) => unit.id === explicitId)?.id) ||
+      getBusinessUnitByValue(
+        businessUnits,
+        item.business_unit ??
+          (item as MasterItem & { businessUnit?: string }).businessUnit,
+      )?.id
+    const inferredIds = [
+      ...new Set(
+        knownLocationReferences
+          .filter(
+            (reference) =>
+              (reference.locationId &&
+                reference.locationId === sourceLocationId(item)) ||
+              normalize(reference.location ?? "") === normalize(name),
+          )
+          .map(resolveUnitId)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ]
+    const businessUnitIds = directId
+      ? [directId]
+      : inferredIds.length
+        ? inferredIds
+        : [legacyBusinessUnit()?.id ?? ""]
+    businessUnitIds.forEach((businessUnitId, index) =>
+      addLocation(index === 0 ? item : undefined, name, businessUnitId),
+    )
+  })
+
+  const knownLocationNames = new Set(
+    allLocationRows.map((item) => normalize(locationName(item))),
+  )
+  ;(references.assets ?? []).forEach((reference) => {
+    const name = reference.location?.trim() ?? ""
+    const unitId = resolveUnitId(reference)
+    if (name && unitId && !knownLocationNames.has(normalize(name))) {
+      addLocation(undefined, name, unitId)
+      knownLocationNames.add(normalize(name))
+    }
+  })
+  knownLocationReferences.forEach((reference) => {
+    const name = reference.location?.trim() ?? ""
+    const unitId = resolveUnitId(reference)
+    if (name && unitId && knownLocationNames.has(normalize(name)))
+      addLocation(undefined, name, unitId)
+  })
 
   const conditions = mergeByName(
     Array.isArray(source.conditions) ? source.conditions : [],
@@ -613,5 +900,14 @@ export function migrateMasterData(
     },
   )
 
-  return { categories, groups, types, brands, models, locations, conditions }
+  return {
+    categories,
+    groups,
+    types,
+    brands,
+    models,
+    businessUnits,
+    locations,
+    conditions,
+  }
 }

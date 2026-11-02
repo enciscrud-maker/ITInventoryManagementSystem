@@ -13,6 +13,7 @@ export type AuditScanResult = {
 export type AuditItemChanges = {
   physicalQty?: number | null
   actualLocation?: string
+  actualLocationId?: string
   notes?: string
   confirmed?: boolean
   addEvidence?: string[]
