@@ -10,6 +10,13 @@ const allowedMethods: Record<string, string> = {
   "api/auth/refresh": "POST",
   "api/auth/me": "GET",
 }
+const masterDataResources = new Set([
+  "api/brands",
+  "api/categories",
+  "api/asset-types",
+  "api/asset-models",
+  "api/asset-groups",
+])
 
 const timeoutMs = 10_000
 const cookieOptions = {
@@ -44,12 +51,24 @@ async function proxyAuthRequest(
 ) {
   const { path } = await context.params
   const endpoint = path.join("/")
+  const isAuthEndpoint = Object.hasOwn(allowedMethods, endpoint)
+  const resource = path.length >= 2 ? path.slice(0, 2).join("/") : ""
+  const isMasterDataEndpoint = masterDataResources.has(resource)
+  const hasResourceId =
+    path.length === 3 && /^\d+$/.test(path[2]) && Number(path[2]) > 0
+  const allowedMasterDataMethod =
+    !isMasterDataEndpoint || path.length === 2
+      ? ["GET", "POST"].includes(request.method)
+      : hasResourceId && ["GET", "DELETE"].includes(request.method)
   const expectedMethod = allowedMethods[endpoint]
 
-  if (!expectedMethod) {
+  if (!isAuthEndpoint && !isMasterDataEndpoint) {
     return NextResponse.json({ error: "Not found." }, { status: 404 })
   }
-  if (request.method !== expectedMethod) {
+  if (
+    (isAuthEndpoint && request.method !== expectedMethod) ||
+    (isMasterDataEndpoint && !allowedMasterDataMethod)
+  ) {
     return NextResponse.json({ error: "Method not allowed." }, { status: 405 })
   }
   if (!apiBaseUrl) {
@@ -76,7 +95,7 @@ async function proxyAuthRequest(
 
   const accessToken = requestCookie(request, accessCookie)
   const refreshToken = requestCookie(request, refreshCookie)
-  if (endpoint === "api/auth/me" && !accessToken) {
+  if ((endpoint === "api/auth/me" || isMasterDataEndpoint) && !accessToken) {
     return problemResponse(401, "Unauthorized")
   }
   if (endpoint === "api/auth/refresh" && !refreshToken) {
@@ -93,7 +112,7 @@ async function proxyAuthRequest(
     headers.set("content-type", "application/json")
     const origin = request.headers.get("origin")
     if (origin) headers.set("origin", origin)
-    if (endpoint === "api/auth/me" && accessToken) {
+    if ((endpoint === "api/auth/me" || isMasterDataEndpoint) && accessToken) {
       headers.set("authorization", `Bearer ${accessToken}`)
     }
 
@@ -105,9 +124,16 @@ async function proxyAuthRequest(
     } else if (endpoint === "api/auth/logout") {
       requestBody = JSON.stringify({ refreshToken: refreshToken ?? null })
       if (accessToken) headers.set("authorization", `Bearer ${accessToken}`)
+    } else if (isMasterDataEndpoint && request.method !== "GET") {
+      requestBody = await request.text()
     }
 
-    const upstream = await fetch(new URL(`/${endpoint}`, `${apiBaseUrl}/`), {
+    const requestUrl = new URL(`/${endpoint}`, `${apiBaseUrl}/`)
+    if (isMasterDataEndpoint) {
+      requestUrl.search = new URL(request.url).search
+    }
+
+    const upstream = await fetch(requestUrl, {
       method: request.method,
       headers,
       body: requestBody,
@@ -187,6 +213,12 @@ async function proxyAuthRequest(
       upstream.status === 204 || upstream.status === 304
         ? null
         : await upstream.arrayBuffer()
+    if (isMasterDataEndpoint && request.method === "DELETE" && upstream.ok) {
+      return new NextResponse(null, {
+        status: 204,
+        headers: { "cache-control": "no-store" },
+      })
+    }
     const response = new NextResponse(responseBody, {
       status: upstream.status,
       headers: {
@@ -204,13 +236,13 @@ async function proxyAuthRequest(
     }
     return response
   } catch (error) {
-    console.error("Auth backend proxy request failed.", {
+    console.error("Backend proxy request failed.", {
       endpoint,
       reason: error instanceof Error ? error.message : "Unknown error",
     })
     const response = NextResponse.json(
       {
-        error: "Authentication service is temporarily unavailable.",
+        error: "Backend service is temporarily unavailable.",
         code: controller.signal.aborted ? "TIMEOUT" : "UPSTREAM_UNAVAILABLE",
       },
       { status: controller.signal.aborted ? 504 : 502 },
@@ -224,3 +256,4 @@ async function proxyAuthRequest(
 
 export const GET = proxyAuthRequest
 export const POST = proxyAuthRequest
+export const DELETE = proxyAuthRequest

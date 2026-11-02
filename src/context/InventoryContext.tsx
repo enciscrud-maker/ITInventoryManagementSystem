@@ -17,6 +17,7 @@
 import {
   createContext,
   useContext,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -69,6 +70,11 @@ import {
   summarizeChanges,
   type ActivityChange,
 } from "../services/historyService"
+import {
+  getCachedMasterData,
+  type MasterDataSnapshot,
+} from "@/services/api/masterDataCache"
+import { toMasterItems } from "@/services/api/mappers/master-data.mapper"
 
 type State = {
   assets: Asset[]
@@ -80,6 +86,10 @@ type State = {
   sidebarCollapsed: boolean
   selectedAsset: Asset | null
   toast: string
+  masterDataStatus: "loading" | "ready" | "error"
+  masterDataError: string
+  masterDataRefreshing: boolean
+  refreshMasterData: () => Promise<boolean>
   saveAsset: (asset: Asset) => void
   saveTransaction: (tx: Transaction) => boolean
   updateTransactionStatus: (
@@ -188,6 +198,14 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
   )
   const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null)
   const [toast, setToast] = useState("")
+  const [masterDataStatus, setMasterDataStatus] =
+    useState<"loading" | "ready" | "error">("loading")
+  const [masterDataError, setMasterDataError] = useState("")
+  const [masterDataRefreshing, setMasterDataRefreshing] = useState(false)
+  const masterDataRequestId = useRef(0)
+  const masterDataLoaded = useRef(false)
+  const appliedMasterData = useRef<MasterDataSnapshot | null>(null)
+  const masterDataScope = useRef(currentUser.id)
   useEffect(() => {
     localStorage.setItem("iti-assets", JSON.stringify(assets))
   }, [assets])
@@ -225,6 +243,52 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     setToast(message)
     window.setTimeout(() => setToast(""), 3000)
   }
+  const refreshMasterData = useCallback(async () => {
+    if (masterDataScope.current !== currentUser.id) {
+      masterDataScope.current = currentUser.id
+      masterDataLoaded.current = false
+      appliedMasterData.current = null
+      setMasterDataStatus("loading")
+      setMasterDataError("")
+    }
+    const requestId = ++masterDataRequestId.current
+    setMasterDataRefreshing(true)
+    const result = await getCachedMasterData(currentUser.id)
+    if (requestId !== masterDataRequestId.current) return false
+
+    if (!result.success) {
+      setMasterDataError(result.error)
+      if (!masterDataLoaded.current) setMasterDataStatus("error")
+      setMasterDataRefreshing(false)
+      return false
+    }
+
+    masterDataLoaded.current = true
+    if (appliedMasterData.current !== result.data) {
+      appliedMasterData.current = result.data
+      setMaster((value) => ({ ...value, ...toMasterItems(result.data) }))
+    }
+    setMasterDataStatus("ready")
+    setMasterDataError("")
+    setMasterDataRefreshing(false)
+    return true
+  }, [currentUser.id])
+  useEffect(() => {
+    void refreshMasterData()
+
+    const refreshIfVisible = () => {
+      if (!document.hidden) void refreshMasterData()
+    }
+    const interval = window.setInterval(refreshIfVisible, 30_000)
+    window.addEventListener("focus", refreshIfVisible)
+    document.addEventListener("visibilitychange", refreshIfVisible)
+
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener("focus", refreshIfVisible)
+      document.removeEventListener("visibilitychange", refreshIfVisible)
+    }
+  }, [refreshMasterData])
   const saveAsset = (asset: Asset) => {
     const normalizedAsset = normalizeAssetClassification(asset, master)
     const hasCanonicalClassification = [
@@ -1148,6 +1212,10 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       sidebarCollapsed,
       selectedAsset,
       toast,
+      masterDataStatus,
+      masterDataError,
+      masterDataRefreshing,
+      refreshMasterData,
       saveAsset,
       saveTransaction,
       updateTransactionStatus,
@@ -1177,6 +1245,10 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       sidebarCollapsed,
       selectedAsset,
       toast,
+      masterDataStatus,
+      masterDataError,
+      masterDataRefreshing,
+      refreshMasterData,
     ],
   )
   return <Context.Provider value={value}>{children}</Context.Provider>

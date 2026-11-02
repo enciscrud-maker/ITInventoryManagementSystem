@@ -9,6 +9,15 @@ import {
   canDelete,
   canManageExisting,
 } from "@/services/authorizationService"
+import {
+  assetGroupsApi,
+  assetModelsApi,
+  assetTypesApi,
+  brandsApi,
+  categoriesApi,
+} from "@/services/api/masterData.api"
+import { invalidateMasterDataCache } from "@/services/api/masterDataCache"
+import type { ApiResult } from "@/lib/api/types"
 import type { Asset, MasterItem } from "@/data/demoData"
 import {
   createCategoryRecord,
@@ -67,8 +76,127 @@ const entityName: Record<MasterKey, string> = {
   conditions: "Condition / Status",
 }
 
+const backendMasterKeys = new Set<MasterKey>([
+  "categories",
+  "groups",
+  "types",
+  "brands",
+  "models",
+])
+
+function relatedId(value: string | undefined) {
+  const parsed = Number(value)
+  return Number.isSafeInteger(parsed) && parsed > 0 && parsed <= 2_147_483_647
+    ? parsed
+    : null
+}
+
+function invalidRelationship(): ApiResult<never> {
+  return {
+    success: false,
+    error: "Pilih relasi master data yang valid sebelum menyimpan.",
+    code: "INVALID_RELATIONSHIP",
+  }
+}
+
+async function createBackendMasterRecord(
+  key: MasterKey,
+  draft: MasterItem,
+): Promise<ApiResult<unknown>> {
+  const active = draft.active !== false
+  const name = draft.name.trim()
+  const code = draft.code.trim()
+
+  if (key === "categories") {
+    return categoriesApi.create({
+      catName: name,
+      catCode: code,
+      catPrefix: code,
+      isActive: active,
+    })
+  }
+  if (key === "groups") {
+    const catId = relatedId(draft.category_id)
+    if (!catId) return invalidRelationship()
+    return assetGroupsApi.create({
+      catId,
+      groupName: name,
+      groupCode: draft.group_code ?? code,
+      groupPrefix: draft.group_code ?? code,
+      isActive: active,
+    })
+  }
+  if (key === "types") {
+    const groupId = relatedId(draft.group_id)
+    const catId = relatedId(draft.category_id)
+    if (!groupId || !catId) return invalidRelationship()
+    return assetTypesApi.create({
+      groupId,
+      catId,
+      typeName: name,
+      typeCode: draft.type_code ?? code,
+      typePrefix: draft.type_code ?? code,
+      isActive: active,
+    })
+  }
+  if (key === "brands") {
+    const typeId = draft.type_id ? relatedId(draft.type_id) : null
+    if (draft.type_id && !typeId) return invalidRelationship()
+    return brandsApi.create({
+      typeId,
+      brandName: name,
+      brandCode: draft.brand_code ?? code,
+      brandPrefix: draft.brand_code ?? code,
+      isActive: active,
+    })
+  }
+  if (key === "models") {
+    const catId = relatedId(draft.category_id)
+    const brandId = relatedId(draft.brand_id)
+    const groupId = relatedId(draft.group_id)
+    const typeId = relatedId(draft.type_id)
+    if (!catId || !brandId || !groupId || !typeId) return invalidRelationship()
+    return assetModelsApi.create({
+      catId,
+      brandId,
+      groupId,
+      typeId,
+      modelName: name,
+      modelCode: draft.model_code ?? code,
+      isActive: active,
+    })
+  }
+  return invalidRelationship()
+}
+
+function deleteBackendMasterRecord(
+  key: MasterKey,
+  id: string,
+): Promise<ApiResult<void>> {
+  if (key === "categories") return categoriesApi.destroy(id)
+  if (key === "groups") return assetGroupsApi.destroy(id)
+  if (key === "types") return assetTypesApi.destroy(id)
+  if (key === "brands") return brandsApi.destroy(id)
+  if (key === "models") return assetModelsApi.destroy(id)
+  return Promise.resolve({
+    success: false,
+    error: "Resource master data tidak didukung.",
+    code: "UNSUPPORTED_RESOURCE",
+  })
+}
+
 export default function MasterData() {
-  const { assets, master, saveMaster, deleteMaster } = useInventory()
+  const {
+    assets,
+    master,
+    saveMaster,
+    deleteMaster,
+    notify,
+    masterDataStatus,
+    masterDataError,
+    masterDataRefreshing,
+    refreshMasterData,
+  } = useInventory()
   const { currentUser } = useAuth()
   const createAllowed = canCreateInModule(currentUser, "master-data")
   const [tab, setTab] = useState("Category")
@@ -78,7 +206,11 @@ export default function MasterData() {
   const [editing, setEditing] = useState<MasterItem | null | undefined>()
   const [draft, setDraft] = useState<MasterItem | null>(null)
   const [deleting, setDeleting] = useState<MasterItem | null>(null)
+  const [saving, setSaving] = useState(false)
+  const [deletingRemote, setDeletingRemote] = useState(false)
   const key = tabs[tab]
+  const isBackendMasterData = backendMasterKeys.has(key)
+  const backendReady = masterDataStatus === "ready"
 
   const rows = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -245,18 +377,92 @@ export default function MasterData() {
     closeForm()
   }
 
+  const handleSave = async () => {
+    if (!draft || !validation.valid) return
+    if (!isBackendMasterData) {
+      saveMaster(key, draft)
+      closeForm()
+      return
+    }
+
+    setSaving(true)
+    const result = await createBackendMasterRecord(key, draft)
+    if (!result.success) {
+      notify(result.error)
+      setSaving(false)
+      return
+    }
+
+    invalidateMasterDataCache()
+    const refreshed = await refreshMasterData()
+    notify(
+      refreshed
+        ? `${entityName[key]} berhasil dibuat.`
+        : `${entityName[key]} berhasil dibuat, tetapi daftar belum dapat diperbarui.`,
+    )
+    closeForm()
+    setSaving(false)
+  }
+
+  const handleDelete = async () => {
+    if (!deleting || deletingRemote) return
+    if (!isBackendMasterData) {
+      deleteMaster(key, deleting.id)
+      setDeleting(null)
+      return
+    }
+    if (!canDelete(currentUser)) {
+      notify("Hanya Admin yang dapat melakukan penghapusan data.")
+      setDeleting(null)
+      return
+    }
+
+    setDeletingRemote(true)
+    const result = await deleteBackendMasterRecord(key, deleting.id)
+    if (!result.success) {
+      notify(result.error)
+      setDeletingRemote(false)
+      return
+    }
+
+    invalidateMasterDataCache()
+    const refreshed = await refreshMasterData()
+    notify(
+      refreshed
+        ? `${entityName[key]} berhasil dihapus.`
+        : `${entityName[key]} berhasil dihapus, tetapi daftar belum dapat diperbarui.`,
+    )
+    setDeleting(null)
+    setDeletingRemote(false)
+  }
+
   return (
     <div className="page">
       <PageHeader
         title="Master Data"
         subtitle="Kelola hierarki klasifikasi, referensi aset, dan ID otomatis dari satu tempat."
         actions={
-          <Button disabled={!createAllowed} onClick={() => openEdit()}>
+          <Button
+            disabled={!createAllowed || (isBackendMasterData && !backendReady)}
+            onClick={() => openEdit()}
+          >
             <Plus size={16} /> Add New
           </Button>
         }
       />
       <Tabs items={Object.keys(tabs)} active={tab} onChange={changeTab} />
+      {masterDataError && isBackendMasterData && (
+        <div className="error-summary" role="alert">
+          <span>{masterDataError}</span>
+          <Button
+            variant="secondary"
+            disabled={masterDataRefreshing}
+            onClick={() => void refreshMasterData()}
+          >
+            {masterDataRefreshing ? "Refreshing..." : "Retry"}
+          </Button>
+        </div>
+      )}
       <div className="toolbar">
         <SearchInput
           value={search}
@@ -283,29 +489,55 @@ export default function MasterData() {
             ]}
           />
         )}
-        <span className="record-count">{rows.length} records</span>
+        <span className="record-count">
+          {isBackendMasterData && masterDataStatus === "loading"
+            ? "Loading..."
+            : masterDataRefreshing
+              ? "Syncing..."
+              : `${rows.length} records`}
+        </span>
       </div>
       <section className="table-card">
         <div className="table-scroll">
-          <MasterTable
-            masterKey={key}
-            rows={visibleRows}
-            assets={assets}
-            page={page}
-            pageSize={pageSize}
-            onEdit={openEdit}
-            onDelete={setDeleting}
-          />
-          {!visibleRows.length && <EmptyState />}
+          {isBackendMasterData && masterDataStatus !== "ready" ? (
+            <EmptyState
+              title={
+                masterDataStatus === "error"
+                  ? "Master data gagal dimuat"
+                  : "Memuat master data..."
+              }
+              description={
+                masterDataStatus === "error"
+                  ? "Periksa koneksi atau sesi Anda, lalu coba muat ulang."
+                  : "Mengambil seluruh data terbaru dari server."
+              }
+            />
+          ) : (
+            <>
+              <MasterTable
+                masterKey={key}
+                rows={visibleRows}
+                assets={assets}
+                page={page}
+                pageSize={pageSize}
+                allowEdit={!isBackendMasterData}
+                onEdit={openEdit}
+                onDelete={setDeleting}
+              />
+              {!visibleRows.length && <EmptyState />}
+            </>
+          )}
         </div>
-        <Pagination
-          page={page}
-          pages={pages}
-          onChange={setPage}
-          total={rows.length}
-          from={(page - 1) * pageSize + 1}
-          to={Math.min(page * pageSize, rows.length)}
-        />
+        {(!isBackendMasterData || masterDataStatus === "ready") && (
+          <Pagination
+            page={page}
+            pages={pages}
+            onChange={setPage}
+            total={rows.length}
+            from={(page - 1) * pageSize + 1}
+            to={Math.min(page * pageSize, rows.length)}
+          />
+        )}
       </section>
       <Modal
         open={editing !== undefined && !!draft}
@@ -346,13 +578,10 @@ export default function MasterData() {
                 Cancel
               </Button>
               <Button
-                disabled={!validation.valid}
-                onClick={() => {
-                  saveMaster(key, draft)
-                  closeForm()
-                }}
+                disabled={!validation.valid || saving}
+                onClick={() => void handleSave()}
               >
-                Save Record
+                {saving ? "Saving..." : "Save Record"}
               </Button>
             </div>
           </>
@@ -363,12 +592,11 @@ export default function MasterData() {
         title={`Delete ${deleting?.name}?`}
         description="Record yang masih direferensikan oleh master data atau aset lain tidak dapat dihapus."
         danger
-        confirmLabel="Delete"
-        onClose={() => setDeleting(null)}
-        onConfirm={() => {
-          if (deleting) deleteMaster(key, deleting.id)
-          setDeleting(null)
+        confirmLabel={deletingRemote ? "Deleting..." : "Delete"}
+        onClose={() => {
+          if (!deletingRemote) setDeleting(null)
         }}
+        onConfirm={() => void handleDelete()}
       />
     </div>
   )
@@ -665,6 +893,7 @@ type TableProps = {
   assets: Asset[]
   page: number
   pageSize: number
+  allowEdit: boolean
   onEdit: (item: MasterItem) => void
   onDelete: (item: MasterItem) => void
 }
@@ -679,7 +908,14 @@ function MasterTable(props: TableProps) {
   return <ConditionTable {...props} />
 }
 
-function CategoryTable({ rows, page, pageSize, onEdit, onDelete }: TableProps) {
+function CategoryTable({
+  rows,
+  page,
+  pageSize,
+  allowEdit,
+  onEdit,
+  onDelete,
+}: TableProps) {
   return (
     <table>
       <thead>
@@ -698,7 +934,12 @@ function CategoryTable({ rows, page, pageSize, onEdit, onDelete }: TableProps) {
             <CodeCell value={item.category_id ?? item.id} />
             <NameCell value={item.name} />
             <CodeCell value={item.category_code ?? item.code} />
-            <ActionCell item={item} onEdit={onEdit} onDelete={onDelete} />
+            <ActionCell
+              item={item}
+              allowEdit={allowEdit}
+              onEdit={onEdit}
+              onDelete={onDelete}
+            />
           </tr>
         ))}
       </tbody>
@@ -706,7 +947,7 @@ function CategoryTable({ rows, page, pageSize, onEdit, onDelete }: TableProps) {
   )
 }
 
-function GroupTable({ rows, onEdit, onDelete }: TableProps) {
+function GroupTable({ rows, allowEdit, onEdit, onDelete }: TableProps) {
   return (
     <table>
       <thead>
@@ -729,7 +970,12 @@ function GroupTable({ rows, onEdit, onDelete }: TableProps) {
             <CodeCell value={item.category_id} />
             <TextCell value={item.category_name} />
             <CodeCell value={item.category_code} />
-            <ActionCell item={item} onEdit={onEdit} onDelete={onDelete} />
+            <ActionCell
+              item={item}
+              allowEdit={allowEdit}
+              onEdit={onEdit}
+              onDelete={onDelete}
+            />
           </tr>
         ))}
       </tbody>
@@ -737,7 +983,7 @@ function GroupTable({ rows, onEdit, onDelete }: TableProps) {
   )
 }
 
-function TypeTable({ rows, onEdit, onDelete }: TableProps) {
+function TypeTable({ rows, allowEdit, onEdit, onDelete }: TableProps) {
   return (
     <table>
       <thead>
@@ -758,7 +1004,12 @@ function TypeTable({ rows, onEdit, onDelete }: TableProps) {
             <CodeCell value={item.type_code ?? item.code} />
             <TextCell value={item.group_name} />
             <TextCell value={item.category_name} />
-            <ActionCell item={item} onEdit={onEdit} onDelete={onDelete} />
+            <ActionCell
+              item={item}
+              allowEdit={allowEdit}
+              onEdit={onEdit}
+              onDelete={onDelete}
+            />
           </tr>
         ))}
       </tbody>
@@ -766,7 +1017,7 @@ function TypeTable({ rows, onEdit, onDelete }: TableProps) {
   )
 }
 
-function BrandTable({ rows, onEdit, onDelete }: TableProps) {
+function BrandTable({ rows, allowEdit, onEdit, onDelete }: TableProps) {
   return (
     <table>
       <thead>
@@ -785,7 +1036,12 @@ function BrandTable({ rows, onEdit, onDelete }: TableProps) {
             <NameCell value={item.name} />
             <CodeCell value={item.brand_code ?? item.code} />
             <CodeCell value={item.type_id} />
-            <ActionCell item={item} onEdit={onEdit} onDelete={onDelete} />
+            <ActionCell
+              item={item}
+              allowEdit={allowEdit}
+              onEdit={onEdit}
+              onDelete={onDelete}
+            />
           </tr>
         ))}
       </tbody>
@@ -793,7 +1049,7 @@ function BrandTable({ rows, onEdit, onDelete }: TableProps) {
   )
 }
 
-function ModelTable({ rows, onEdit, onDelete }: TableProps) {
+function ModelTable({ rows, allowEdit, onEdit, onDelete }: TableProps) {
   return (
     <table>
       <thead>
@@ -818,7 +1074,12 @@ function ModelTable({ rows, onEdit, onDelete }: TableProps) {
             <TextCell value={item.group_name} />
             <TextCell value={item.category_name} />
             <CodeCell value={item.asset_id} />
-            <ActionCell item={item} onEdit={onEdit} onDelete={onDelete} />
+            <ActionCell
+              item={item}
+              allowEdit={allowEdit}
+              onEdit={onEdit}
+              onDelete={onDelete}
+            />
           </tr>
         ))}
       </tbody>
@@ -826,7 +1087,13 @@ function ModelTable({ rows, onEdit, onDelete }: TableProps) {
   )
 }
 
-function LocationTable({ rows, assets, onEdit, onDelete }: TableProps) {
+function LocationTable({
+  rows,
+  assets,
+  allowEdit,
+  onEdit,
+  onDelete,
+}: TableProps) {
   return (
     <table>
       <thead>
@@ -853,7 +1120,12 @@ function LocationTable({ rows, assets, onEdit, onDelete }: TableProps) {
               <TextCell value={item.model_name ?? asset?.model} />
               <TextCell value={item.brand_name ?? asset?.brand} />
               <TextCell value={item.condition_name ?? asset?.condition} />
-              <ActionCell item={item} onEdit={onEdit} onDelete={onDelete} />
+              <ActionCell
+                item={item}
+                allowEdit={allowEdit}
+                onEdit={onEdit}
+                onDelete={onDelete}
+              />
             </tr>
           )
         })}
@@ -862,7 +1134,13 @@ function LocationTable({ rows, assets, onEdit, onDelete }: TableProps) {
   )
 }
 
-function ConditionTable({ rows, assets, onEdit, onDelete }: TableProps) {
+function ConditionTable({
+  rows,
+  assets,
+  allowEdit,
+  onEdit,
+  onDelete,
+}: TableProps) {
   return (
     <table>
       <thead>
@@ -889,7 +1167,12 @@ function ConditionTable({ rows, assets, onEdit, onDelete }: TableProps) {
               <TextCell value={item.location_name ?? asset?.location} />
               <TextCell value={item.brand_name ?? asset?.brand} />
               <CodeCell value={item.asset_id ?? asset?.id} />
-              <ActionCell item={item} onEdit={onEdit} onDelete={onDelete} />
+              <ActionCell
+                item={item}
+                allowEdit={allowEdit}
+                onEdit={onEdit}
+                onDelete={onDelete}
+              />
             </tr>
           )
         })}
@@ -920,16 +1203,18 @@ function CodeCell({ value }: { value?: string }) {
 
 function ActionCell({
   item,
+  allowEdit,
   onEdit,
   onDelete,
 }: {
   item: MasterItem
+  allowEdit: boolean
   onEdit: (item: MasterItem) => void
   onDelete: (item: MasterItem) => void
 }) {
   const { currentUser } = useAuth()
   const allowed = canDelete(currentUser)
-  const canEdit = canManageExisting(currentUser)
+  const canEdit = allowEdit && canManageExisting(currentUser)
   return (
     <td>
       <div className="row-actions">
