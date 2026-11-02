@@ -79,7 +79,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
     setSelectedAsset,
     toast,
   } = useInventory()
-  const { currentUser, logout, isPending } = useAuth()
+  const { currentUser, logout, isPending, logoutError } = useAuth()
   const [mobile, setMobile] = useState(false)
   const [search, setSearch] = useState("")
   const [alerts, setAlerts] = useState(false)
@@ -360,7 +360,11 @@ export function AppLayout({ children }: { children: ReactNode }) {
         onClose={() => setLogoutOpen(false)}
         onConfirm={() => void logout()}
       />
-      {toast && <div className="toast">{toast}</div>}
+      {(toast || logoutError) && (
+        <div className="toast" role={logoutError ? "alert" : "status"}>
+          {logoutError || toast}
+        </div>
+      )}
     </div>
   )
 }

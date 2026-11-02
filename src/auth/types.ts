@@ -1,11 +1,7 @@
+import type { ApiResult } from "@/lib/api/types"
+
 export type AccountRole = "Admin" | "Member"
-export type PagePermission =
-  | "asset-inventory"
-  | "goods-in"
-  | "goods-out"
-  | "stock-opname"
-  | "master-data"
-  | "reports"
+export type PagePermission = "asset-inventory" | "goods-in" | "goods-out" | "stock-opname" | "master-data" | "reports"
 
 export type PublicAccount = {
   id: string
@@ -25,9 +21,7 @@ export type PublicAccount = {
   is_active: boolean
 }
 
-export type ActionResult<T = undefined,> = { success: true } & { data: T } | {
-  success: false
-} & { error: string } & { code?: string }
+export type ActionResult<T = undefined> = ApiResult<T>
 
 export type PasswordResetStatus = "Pending" | "Processed" | "Rejected"
 
