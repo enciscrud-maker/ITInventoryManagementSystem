@@ -439,7 +439,14 @@ export default function MasterData() {
     setDeletingRemote(false)
   }
 
-  if (key === "businessUnits") return <BusinessUnitManagement />
+  if (key === "businessUnits")
+    return (
+      <BusinessUnitManagement
+        tabs={Object.keys(tabs)}
+        activeTab={tab}
+        onTabChange={changeTab}
+      />
+    )
 
   return (
     <div className="page">

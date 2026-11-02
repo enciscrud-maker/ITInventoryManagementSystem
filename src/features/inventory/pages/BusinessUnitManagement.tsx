@@ -16,10 +16,19 @@ import {
   Input,
   Modal,
   PageHeader,
+  Tabs,
 } from "@/components/ui"
 import { generateBusinessUnitCode } from "@/utils/masterData"
 
-export default function BusinessUnitManagement() {
+export default function BusinessUnitManagement({
+  tabs,
+  activeTab,
+  onTabChange,
+}: {
+  tabs: string[]
+  activeTab: string
+  onTabChange: (tab: string) => void
+}) {
   const {
     master,
     assets,
@@ -114,6 +123,7 @@ export default function BusinessUnitManagement() {
           </Button>
         }
       />
+      <Tabs items={tabs} active={activeTab} onChange={onTabChange} />
       <div className="toolbar">
         <label className="field">
           <span>Search Business Units</span>
