@@ -94,7 +94,7 @@ export async function httpRequest<T>(
     const refreshResult = await performRequest<unknown>(
       apiRoutes.auth.refresh,
       { method: "POST" },
-      { retryAfterRefresh: false },
+      { baseUrl: "same-origin", retryAfterRefresh: false },
     )
     return refreshResult.success
   })

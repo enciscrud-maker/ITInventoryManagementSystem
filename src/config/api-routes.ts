@@ -1,9 +1,9 @@
 export const apiRoutes = {
   auth: {
-    login: "/api/auth/login",
-    logout: "/api/auth/logout",
-    refresh: "/api/auth/refresh",
-    me: "/api/auth/me",
+    login: "/app-api/backend/api/auth/login",
+    logout: "/app-api/backend/api/auth/logout",
+    refresh: "/app-api/backend/api/auth/refresh",
+    me: "/app-api/backend/api/auth/me",
   },
   app: {
     accounts: "/app-api/accounts",
