@@ -261,9 +261,19 @@ export default function MasterData() {
               category_id: "",
             }
           : key === "types"
-            ? { ...base, type_id: id, type_name: "", type_code: "" }
+            ? { 
+              ...base, 
+              type_id: id, 
+              type_name: "", 
+              type_code: "" 
+            }
             : key === "brands"
-              ? { ...base, brand_id: id, brand_name: "", brand_code: "" }
+              ? { 
+                ...base, 
+                brand_id: id, 
+                brand_name: "", 
+                brand_code: "" 
+              }
               : key === "models"
                 ? {
                     ...base,
