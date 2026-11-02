@@ -18,9 +18,9 @@ import type {
   TransactionParty,
   TransactionStatus,
 } from "@/data/demoData"
-import { businessUnits, locations } from "@/data/demoData"
 import { formatDate, today } from "@/utils/helpers"
 import { previewRequestNumber } from "@/utils/requestNumber"
+import { getLocationsForBusinessUnit } from "@/utils/masterData"
 import { useAuth } from "@/auth/AuthContext"
 import {
   canCreateInModule,
@@ -51,7 +51,6 @@ const goodsOutTypes = [
   "Handover",
 ]
 const destinationOptions = [
-  ...locations,
   "External Service Provider",
   "Employee / Borrower",
   "Other",
@@ -61,12 +60,14 @@ type TransactionForm = {
   id: string
   document: string
   businessUnit: string
+  businessUnitId: string
   requestDate: string
   formIssueDate: string
   party: TransactionParty
   type: string
   assets: TransactionAssetItem[]
   location: string
+  locationId: string
   supportingDocuments: TransactionAttachment[]
   requestNumber: string
   approverName: string
@@ -320,6 +321,7 @@ export default function Transactions({
   const {
     assets,
     transactions,
+    master,
     businessUnit,
     saveTransaction,
     updateTransactionStatus,
@@ -354,7 +356,7 @@ export default function Transactions({
         (transaction) =>
           transaction.direction === direction &&
           (businessUnit === "All Business Units" ||
-            transaction.businessUnit === businessUnit) &&
+            transaction.businessUnitId === businessUnit) &&
           (!search ||
             [
               transaction.document,
@@ -390,17 +392,21 @@ export default function Transactions({
 
   const openCreate = () => {
     const document = generateDocumentNumber(direction, transactions)
+    const unit =
+      master.businessUnits.find((item) => item.id === businessUnit) ??
+      master.businessUnits[0]
     setForm({
       id: `TRX-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       document,
-      businessUnit:
-        businessUnit === "All Business Units" ? businessUnits[0] : businessUnit,
+      businessUnit: unit?.name ?? "",
+      businessUnitId: unit?.id ?? "",
       requestDate: today(),
       formIssueDate: today(),
       party: { name: "", nik: "", department: "" },
       type: types[0],
       assets: [emptyAssetRow()],
       location: "",
+      locationId: "",
       supportingDocuments: [],
       requestNumber: "",
       approverName: "",
@@ -417,6 +423,37 @@ export default function Transactions({
     key: K,
     value: TransactionForm[K],
   ) => setForm((current) => (current ? { ...current, [key]: value } : current))
+
+  const setBusinessUnit = (id: string) => {
+    const unit = master.businessUnits.find((item) => item.id === id)
+    setForm((current) =>
+      current
+        ? {
+            ...current,
+            businessUnit: unit?.name ?? "",
+            businessUnitId: unit?.id ?? "",
+            location: "",
+            locationId: "",
+          }
+        : current,
+    )
+  }
+
+  const setDestination = (value: string) => {
+    const location = getLocationsForBusinessUnit(
+      master.locations,
+      form?.businessUnitId ?? "",
+    ).find((item) => item.id === value)
+    setForm((current) =>
+      current
+        ? {
+            ...current,
+            location: location?.name ?? value,
+            locationId: location?.id ?? "",
+          }
+        : current,
+    )
+  }
 
   const setPartyValue = (key: keyof TransactionParty, value: string) =>
     setForm((current) =>
@@ -466,7 +503,7 @@ export default function Transactions({
     if (targetStep === 1) {
       if (
         !form.document ||
-        !form.businessUnit ||
+        !form.businessUnitId ||
         !form.formIssueDate ||
         !form.party.name.trim() ||
         !form.party.nik.trim() ||
@@ -506,9 +543,11 @@ export default function Transactions({
     }
     if (
       targetStep === 3 &&
-      (!form.location || !form.approverName.trim())
+      (!form.location || !form.businessUnitId || !form.approverName.trim())
     )
       return "Complete the destination and approver fields."
+    if (targetStep === 3 && incoming && !form.locationId)
+      return "Select a Location belonging to the selected Business Unit."
     return ""
   }
 
@@ -537,7 +576,9 @@ export default function Transactions({
       type: form.type,
       quantity,
       location: form.location,
+      locationId: form.locationId || undefined,
       businessUnit: form.businessUnit,
+      businessUnitId: form.businessUnitId,
       status: "In Progress",
       user: form.party.name,
       po: firstAsset.referenceNumber,
@@ -810,11 +851,15 @@ export default function Transactions({
                 />
                 <Select
                   label="Business Unit *"
-                  value={form.businessUnit}
-                  onChange={(event) =>
-                    setFormValue("businessUnit", event.target.value)
-                  }
-                  options={businessUnits}
+                  value={form.businessUnitId}
+                  onChange={(event) => setBusinessUnit(event.target.value)}
+                  options={[
+                    { value: "", label: "Select business unit" },
+                    ...master.businessUnits.map((unit) => ({
+                      value: unit.id,
+                      label: unit.name,
+                    })),
+                  ]}
                 />
                 <Input
                   label="Form Issue Date *"
@@ -1121,13 +1166,14 @@ export default function Transactions({
                 />
                 <Select
                   label="Business Unit *"
-                  value={form.businessUnit}
-                  onChange={(event) =>
-                    setFormValue("businessUnit", event.target.value)
-                  }
+                  value={form.businessUnitId}
+                  onChange={(event) => setBusinessUnit(event.target.value)}
                   options={[
                     { value: "", label: "Select business unit" },
-                    ...businessUnits,
+                    ...master.businessUnits.map((unit) => ({
+                      value: unit.id,
+                      label: unit.name,
+                    })),
                   ]}
                 />
                 <Select
@@ -1136,13 +1182,19 @@ export default function Transactions({
                       ? "Destination Location *"
                       : "Destination / Provider Location *"
                   }
-                  value={form.location}
-                  onChange={(event) =>
-                    setFormValue("location", event.target.value)
-                  }
+                  value={form.locationId || form.location}
+                  onChange={(event) => setDestination(event.target.value)}
+                  disabled={!form.businessUnitId}
                   options={[
                     { value: "", label: "Select destination" },
-                    ...destinationOptions,
+                    ...getLocationsForBusinessUnit(
+                      master.locations,
+                      form.businessUnitId,
+                    ).map((location) => ({
+                      value: location.id,
+                      label: location.name,
+                    })),
+                    ...(!incoming ? destinationOptions : []),
                   ]}
                 />
                 <Input

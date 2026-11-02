@@ -16,7 +16,7 @@ import {
   processPasswordReset,
   updateAccount,
 } from "@/auth/client"
-import { businessUnits } from "@/data/demoData"
+import { useInventory } from "@/context/InventoryContext"
 import {
   getDataActivityHistory,
   getLoginHistory,
@@ -83,7 +83,7 @@ const emptyDraft: AccountDraft = {
   page_permissions: [],
   position: "",
   department: "",
-  business_unit: businessUnits[0],
+  business_unit: "",
   is_active: true,
 }
 
@@ -119,6 +119,7 @@ const formatChanges = (record: DataActivityRecord) => {
 
 export default function AccountsPage() {
   const { currentUser } = useAuth()
+  const { master } = useInventory()
   const [activeTab, setActiveTab] = useState(tabs[0])
   const [accounts, setAccounts] = useState<PublicAccount[]>([])
   const [loginHistory, setLoginHistory] = useState<LoginHistoryRecord[]>([])
@@ -320,7 +321,14 @@ export default function AccountsPage() {
         subtitle="Manage employee accounts and review authentication and data activity."
         actions={
           activeTab === tabs[0] ? (
-            <Button onClick={() => setDraft({ ...emptyDraft })}>
+            <Button
+              onClick={() =>
+                setDraft({
+                  ...emptyDraft,
+                  business_unit: master.businessUnits[0]?.name ?? "",
+                })
+              }
+            >
               <Plus size={16} /> Add Account
             </Button>
           ) : undefined
@@ -357,7 +365,7 @@ export default function AccountsPage() {
                 onChange={(event) => setUnit(event.target.value)}
                 options={[
                   { value: "", label: "All Business Units" },
-                  ...businessUnits,
+                  ...master.businessUnits.map((item) => item.name),
                 ]}
               />
               <span className="record-count">
@@ -779,7 +787,7 @@ export default function AccountsPage() {
                 onChange={(event) =>
                   setDraft({ ...draft, business_unit: event.target.value })
                 }
-                options={businessUnits}
+                options={master.businessUnits.map((item) => item.name)}
               />
               {draft.id && (
                 <Select

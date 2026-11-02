@@ -22,6 +22,7 @@ import {
 } from "@/services/authorizationService"
 import type { Asset, MasterItem } from "@/data/demoData"
 import { downloadCsv, today } from "@/utils/helpers"
+import { getLocationsForBusinessUnit } from "@/utils/masterData"
 import { AssetForm } from "@/components/assets"
 import {
   Badge,
@@ -275,9 +276,18 @@ const mapImportRow = ({
   if (errors.length || !category || !group || !type || !brand || !condition)
     return { row: index + 2, source: row, errors }
 
-  const defaultLocation = master.locations[0]?.name ?? "Unassigned"
-  const targetBusinessUnit =
-    businessUnit === "All Business Units" ? "MBP" : businessUnit
+  const targetUnit =
+    master.businessUnits.find((unit) => unit.id === businessUnit) ??
+    master.businessUnits[0]
+  const defaultLocation = targetUnit
+    ? getLocationsForBusinessUnit(master.locations, targetUnit.id)[0]
+    : undefined
+  if (!targetUnit || !defaultLocation)
+    return {
+      row: index + 2,
+      source: row,
+      errors: ["A Business Unit with at least one Location is required"],
+    }
   return {
     row: index + 2,
     source: row,
@@ -295,8 +305,10 @@ const mapImportRow = ({
       type: type.name,
       brand: brand.name,
       model: assetName,
-      location: defaultLocation,
-      businessUnit: targetBusinessUnit,
+      location: defaultLocation.name,
+      locationId: defaultLocation.id,
+      businessUnit: targetUnit.name,
+      businessUnitId: targetUnit.id,
       condition,
       quantity: 1,
       uom: "UNIT",
@@ -337,6 +349,7 @@ export default function AssetInventory() {
   const [formAsset, setFormAsset] = useState<Asset | null | undefined>()
   const [moveOpen, setMoveOpen] = useState(false)
   const [moveLocation, setMoveLocation] = useState("")
+  const [moveBusinessUnitId, setMoveBusinessUnitId] = useState("")
   const [importOpen, setImportOpen] = useState(false)
   const [importRows, setImportRows] = useState<AssetImportRow[]>([])
   const [importFileName, setImportFileName] = useState("")
@@ -401,18 +414,15 @@ export default function AssetInventory() {
     type: availableTypes.map((x) => x.name),
     brand: availableBrands.map((x) => x.name),
     model: availableModels.map((x) => x.name),
-    businessUnit: [
-      "MBP",
-      "HBI",
-      "AL",
-      "SMT",
-      "BGN",
-      "PBMM",
-      "IMPT",
-      "SDM",
-      "IBT",
-    ],
-    location: master.locations.map((x) => x.name),
+    businessUnit: master.businessUnits.map((unit) => unit.name),
+    location: Array.from(
+      new Set(
+        (businessUnit === "All Business Units"
+          ? master.locations
+          : getLocationsForBusinessUnit(master.locations, businessUnit)
+        ).map((location) => location.name),
+      ),
+    ),
     serial: uniqueValues("serial"),
     tag: uniqueValues("tag"),
     id: uniqueValues("id"),
@@ -455,6 +465,8 @@ export default function AssetInventory() {
         }
       }
       if (key === "brand") return { ...current, brand: value, model: "" }
+      if (key === "businessUnit")
+        return { ...current, businessUnit: value, location: "" }
       return { ...current, [key]: value }
     })
     setPage(1)
@@ -487,7 +499,7 @@ export default function AssetInventory() {
           return (
             (!q.length || q.every((word) => searchable.includes(word))) &&
             (businessUnit === "All Business Units" ||
-              a.businessUnit === businessUnit) &&
+              a.businessUnitId === businessUnit) &&
             Object.entries(filters).every(([k, v]) => {
               if (!v) return true
               const field = String(a[(k as keyof Asset)] ?? "")
@@ -732,7 +744,18 @@ export default function AssetInventory() {
                 <Button
                   size="sm"
                   variant="secondary"
-                  onClick={() => setMoveOpen(true)}
+                  onClick={() => {
+                    const firstSelected = assets.find((asset) =>
+                      selected.includes(asset.id),
+                    )
+                    setMoveBusinessUnitId(
+                      firstSelected?.businessUnitId ??
+                        master.businessUnits[0]?.id ??
+                        "",
+                    )
+                    setMoveLocation("")
+                    setMoveOpen(true)
+                  }}
                 >
                   <MapPin size={15} /> Move Location
                 </Button>
@@ -979,16 +1002,38 @@ export default function AssetInventory() {
       <Modal
         open={manageAllowed && moveOpen}
         title={`Move ${selected.length} assets`}
-        description="This bulk action updates the current location of selected records."
+        description="This bulk action updates the Business Unit and Location of selected records."
         onClose={() => setMoveOpen(false)}
       >
         <Select
-          label="New location"
+          label="Business Unit"
+          value={moveBusinessUnitId}
+          onChange={(e) => {
+            setMoveBusinessUnitId(e.target.value)
+            setMoveLocation("")
+          }}
+          options={[
+            { value: "", label: "Select Business Unit" },
+            ...master.businessUnits.map((unit) => ({
+              value: unit.id,
+              label: unit.name,
+            })),
+          ]}
+        />
+        <Select
+          label="Location"
           value={moveLocation}
           onChange={(e) => setMoveLocation(e.target.value)}
+          disabled={!moveBusinessUnitId}
           options={[
-            { value: "", label: "Select location" },
-            ...master.locations.map((x) => x.name),
+            { value: "", label: "Select Location" },
+            ...getLocationsForBusinessUnit(
+              master.locations,
+              moveBusinessUnitId,
+            ).map((location) => ({
+              value: location.id,
+              label: location.name,
+            })),
           ]}
         />
         <div className="form-actions">
@@ -996,14 +1041,25 @@ export default function AssetInventory() {
             Cancel
           </Button>
           <Button
-            disabled={!moveLocation}
+            disabled={!moveBusinessUnitId || !moveLocation}
             onClick={() => {
               selected.forEach((id) => {
                 const a = assets.find((x) => x.id === id)
-                if (a)
+                const unit = master.businessUnits.find(
+                  (item) => item.id === moveBusinessUnitId,
+                )
+                const location = master.locations.find(
+                  (item) =>
+                    item.id === moveLocation &&
+                    item.businessUnitId === moveBusinessUnitId,
+                )
+                if (a && unit && location)
                   saveAsset({
                     ...a,
-                    location: moveLocation,
+                    businessUnit: unit.name,
+                    businessUnitId: unit.id,
+                    location: location.name,
+                    locationId: location.id,
                     updatedAt: today(),
                   })
               })

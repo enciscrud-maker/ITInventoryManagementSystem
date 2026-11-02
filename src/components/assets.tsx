@@ -21,6 +21,7 @@ import {
   today,
 } from "../utils/helpers"
 import {
+  getLocationsForBusinessUnit,
   getMasterItemId,
   isAssetClassificationValid,
   normalizeAssetClassification,
@@ -62,7 +63,9 @@ export function AssetForm({
     brand: "",
     model: "",
     location: "",
+    locationId: "",
     businessUnit: "",
+    businessUnitId: "",
     condition: "Good",
     quantity: 1,
     uom: "UNIT",
@@ -132,8 +135,8 @@ export function AssetForm({
       "brand",
       "model",
       "serial",
-      "location",
-      "businessUnit",
+      "locationId",
+      "businessUnitId",
     ] as Array<keyof Asset>
     const next = required
       .filter((k) => !form[k])
@@ -362,34 +365,54 @@ export function AssetForm({
           <legend>Location & ownership</legend>
           <div className="form-grid">
             <Select
-              label="Location *"
-              value={form.location}
-              onChange={(e) => set("location", e.target.value)}
+              label="Business Unit *"
+              value={form.businessUnitId ?? ""}
+              onChange={(e) => {
+                const unit = master.businessUnits.find(
+                  (item) => item.id === e.target.value,
+                )
+                setForm((value) => ({
+                  ...value,
+                  businessUnitId: unit?.id ?? "",
+                  businessUnit: unit?.name ?? "",
+                  locationId: "",
+                  location: "",
+                }))
+                setDirty(true)
+              }}
               options={[
-                { value: "", label: "Select location" },
-                ...master.locations.map((x) => ({
-                  value: x.name,
-                  label: x.name,
+                { value: "", label: "Select business unit" },
+                ...master.businessUnits.map((unit) => ({
+                  value: unit.id,
+                  label: unit.name,
                 })),
               ]}
             />
             <Select
-              label="Business Unit *"
-              value={form.businessUnit}
-              onChange={(e) => set("businessUnit", e.target.value)}
+              label="Location *"
+              value={form.locationId ?? ""}
+              disabled={!form.businessUnitId}
+              onChange={(e) => {
+                const location = getLocationsForBusinessUnit(
+                  master.locations,
+                  form.businessUnitId ?? "",
+                ).find((item) => item.id === e.target.value)
+                setForm((value) => ({
+                  ...value,
+                  locationId: location?.id ?? "",
+                  location: location?.name ?? "",
+                }))
+                setDirty(true)
+              }}
               options={[
-                { value: "", label: "Select business unit" },
-                ...[
-                  "MBP",
-                  "HBI",
-                  "AL",
-                  "SMT",
-                  "BGN",
-                  "PBMM",
-                  "IMPT",
-                  "SDM",
-                  "IBT",
-                ],
+                { value: "", label: "Select location" },
+                ...getLocationsForBusinessUnit(
+                  master.locations,
+                  form.businessUnitId ?? "",
+                ).map((location) => ({
+                  value: location.id,
+                  label: location.name,
+                })),
               ]}
             />
           </div>

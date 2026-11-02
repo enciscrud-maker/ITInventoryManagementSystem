@@ -26,7 +26,6 @@ import {
   UserRound,
   X,
 } from "lucide-react"
-import { businessUnits } from "../data/demoData"
 import { useInventory } from "../context/InventoryContext"
 import { useAuth } from "../auth/AuthContext"
 import { Badge, Button, ConfirmDialog, IconButton, Select } from "./ui"
@@ -73,6 +72,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
     setTheme,
     businessUnit,
     setBusinessUnit,
+    master,
     assets,
     transactions,
     audits,
@@ -246,7 +246,13 @@ export function AppLayout({ children }: { children: ReactNode }) {
             className="unit-switcher"
             value={businessUnit}
             onChange={(event) => setBusinessUnit(event.target.value)}
-            options={["All Business Units", ...businessUnits]}
+            options={[
+              { value: "All Business Units", label: "All Business Units" },
+              ...master.businessUnits.map((unit) => ({
+                value: unit.id,
+                label: unit.name,
+              })),
+            ]}
           />
           <div className="topbar-menu">
             <IconButton

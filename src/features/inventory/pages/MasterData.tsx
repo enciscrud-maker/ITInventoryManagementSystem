@@ -45,6 +45,7 @@ import {
   Select,
   Tabs,
 } from "@/components/ui"
+import BusinessUnitManagement from "./BusinessUnitManagement"
 
 const tabs: Record<string, MasterKey> = {
   Category: "categories",
@@ -52,7 +53,7 @@ const tabs: Record<string, MasterKey> = {
   Type: "types",
   Brand: "brands",
   Model: "models",
-  "Location & Business Unit": "locations",
+  "Business Unit": "businessUnits",
   "Condition / Status": "conditions",
 }
 
@@ -62,6 +63,7 @@ const idField: Record<MasterKey, keyof MasterItem> = {
   types: "type_id",
   brands: "brand_id",
   models: "model_id",
+  businessUnits: "id",
   locations: "location_id",
   conditions: "condition_id",
 }
@@ -72,7 +74,8 @@ const entityName: Record<MasterKey, string> = {
   types: "Type",
   brands: "Brand",
   models: "Model",
-  locations: "Location & Business Unit",
+  businessUnits: "Business Unit",
+  locations: "Location",
   conditions: "Condition / Status",
 }
 
@@ -445,6 +448,8 @@ export default function MasterData() {
     setDeleting(null)
     setDeletingRemote(false)
   }
+
+  if (key === "businessUnits") return <BusinessUnitManagement />
 
   return (
     <div className="page">

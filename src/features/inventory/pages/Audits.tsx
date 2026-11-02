@@ -22,6 +22,7 @@ import {
 } from "@/services/authorizationService"
 import type { Audit } from "@/data/demoData"
 import { downloadCsv, today } from "@/utils/helpers"
+import { getLocationsForBusinessUnit } from "@/utils/masterData"
 import {
   MAX_EVIDENCE_PER_ASSET,
   buildHistoricalMap,
@@ -74,12 +75,10 @@ export default function Audits() {
   const [draft, setDraft] = useState({
     name: "",
     date: today(),
-    businessUnit:
-      businessUnit ===
-      "All Business Units"
-        ? "MBP"
-        : businessUnit,
+    businessUnit: "",
+    businessUnitId: "",
     location: "All Locations",
+    locationId: "",
     auditor: "",
   })
   const selected = audits.find(
@@ -100,7 +99,7 @@ export default function Audits() {
     (a) =>
       (businessUnit ===
         "All Business Units" ||
-        a.businessUnit ===
+        a.businessUnitId ===
           businessUnit) &&
       (!search ||
         [a.name, a.id, a.auditor]
@@ -111,12 +110,8 @@ export default function Audits() {
   const createAudit = () => {
     const scoped = assets.filter(
       (a) =>
-        a.businessUnit ===
-          draft.businessUnit &&
-        (draft.location ===
-          "All Locations" ||
-          a.location ===
-            draft.location),
+        a.businessUnitId === draft.businessUnitId &&
+        (!draft.locationId || a.locationId === draft.locationId),
     )
     const audit: Audit = {
       id: `AUD-${Date.now()}`,
@@ -127,8 +122,10 @@ export default function Audits() {
         assetId: a.id,
         systemQty: a.quantity,
         systemLocation: a.location,
+        systemLocationId: a.locationId,
         physicalQty: null,
         actualLocation: a.location,
+        actualLocationId: a.locationId,
         finding: "Unverified",
         confirmed: false,
         notes: "",
@@ -451,15 +448,18 @@ export default function Audits() {
                           className="cell-input"
                           aria-label={`Actual location for ${asset.id}`}
                           disabled={!editable}
-                          value={item.actualLocation}
+                          value={item.actualLocationId ?? ""}
                           onChange={(e) =>
                             updateAuditItem(selected.id, item.assetId, {
-                              actualLocation: e.target.value,
+                              actualLocationId: e.target.value,
                             })
                           }
                         >
-                          {master.locations.map((location) => (
-                            <option key={location.id} value={location.name}>
+                          {getLocationsForBusinessUnit(
+                            master.locations,
+                            selected.businessUnitId ?? "",
+                          ).map((location) => (
+                            <option key={location.id} value={location.id}>
                               {location.name}
                             </option>
                           ))}
@@ -622,7 +622,22 @@ export default function Audits() {
         actions={
           <Button
             disabled={!canCreateInModule(currentUser, "stock-opname")}
-            onClick={() => setCreate(true)}
+            onClick={() => {
+              const unit =
+                master.businessUnits.find(
+                  (item) => item.id === businessUnit,
+                ) ?? master.businessUnits[0]
+              setDraft({
+                name: "",
+                date: today(),
+                businessUnit: unit?.name ?? "",
+                businessUnitId: unit?.id ?? "",
+                location: "All Locations",
+                locationId: "",
+                auditor: "",
+              })
+              setCreate(true)
+            }}
           >
             <Plus size={16} /> Create Audit Session
           </Button>
@@ -711,31 +726,51 @@ export default function Audits() {
           />
           <Select
             label="Business Unit *"
-            value={draft.businessUnit}
-            onChange={(e) =>
-              setDraft((v) => ({ ...v, businessUnit: e.target.value }))
-            }
+            value={draft.businessUnitId}
+            onChange={(e) => {
+              const unit = master.businessUnits.find(
+                (item) => item.id === e.target.value,
+              )
+              setDraft((v) => ({
+                ...v,
+                businessUnit: unit?.name ?? "",
+                businessUnitId: unit?.id ?? "",
+                location: "All Locations",
+                locationId: "",
+              }))
+            }}
             options={[
-              "MBP",
-              "HBI",
-              "AL",
-              "SMT",
-              "BGN",
-              "PBMM",
-              "IMPT",
-              "SDM",
-              "IBT",
+              { value: "", label: "Select Business Unit" },
+              ...master.businessUnits.map((unit) => ({
+                value: unit.id,
+                label: unit.name,
+              })),
             ]}
           />
           <Select
             label="Location scope"
-            value={draft.location}
-            onChange={(e) =>
-              setDraft((v) => ({ ...v, location: e.target.value }))
-            }
+            value={draft.locationId}
+            disabled={!draft.businessUnitId}
+            onChange={(e) => {
+              const location = getLocationsForBusinessUnit(
+                master.locations,
+                draft.businessUnitId,
+              ).find((item) => item.id === e.target.value)
+              setDraft((v) => ({
+                ...v,
+                location: location?.name ?? "All Locations",
+                locationId: location?.id ?? "",
+              }))
+            }}
             options={[
-              "All Locations",
-              ...master.locations.map((location) => location.name),
+              { value: "", label: "All Locations" },
+              ...getLocationsForBusinessUnit(
+                master.locations,
+                draft.businessUnitId,
+              ).map((location) => ({
+                value: location.id,
+                label: location.name,
+              })),
             ]}
           />
           <Input
@@ -750,9 +785,8 @@ export default function Audits() {
           {
             assets.filter(
               (a) =>
-                a.businessUnit === draft.businessUnit &&
-                (draft.location === "All Locations" ||
-                  a.location === draft.location),
+                a.businessUnitId === draft.businessUnitId &&
+                (!draft.locationId || a.locationId === draft.locationId),
             ).length
           }{" "}
           assets will be included.

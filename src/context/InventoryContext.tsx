@@ -40,10 +40,17 @@ import {
 import {
   createCategoryRecord,
   createGroupRecord,
+  generateBusinessUnitCode,
   generateAssetId,
+  generateMasterId,
+  getBusinessUnitByValue,
+  getLocationsForBusinessUnit,
   isAssetClassificationValid,
   migrateMasterData,
+  normalizeBusinessUnitLocation,
   normalizeAssetClassification,
+  reserveDeletedBusinessUnit,
+  reserveDeletedLocation,
   reserveMasterId,
   resolveCategoryById,
 } from "../utils/masterData"
@@ -124,6 +131,10 @@ type State = {
   importAssets: (v: Asset[]) => void
   saveMaster: (key: string, item: MasterItem) => void
   deleteMaster: (key: string, id: string) => boolean
+  saveBusinessUnit: (name: string, id?: string) => boolean
+  saveLocation: (name: string, businessUnitId: string, id?: string) => boolean
+  deleteBusinessUnit: (id: string) => boolean
+  deleteLocation: (id: string) => boolean
 }
 
 const Context = createContext<State | null>(null)
@@ -185,11 +196,19 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
   const auditsRef = useRef(audits)
   auditsRef.current = audits
   const [master, setMaster] = useState(() =>
-    migrateMasterData(read("iti-master", demoMaster)),
+    migrateMasterData(read("iti-master", demoMaster), {
+      assets,
+      transactions,
+      audits,
+    }),
   )
-  const [businessUnit, setBusinessUnit] = useState(() =>
-    read("iti-unit", "All Business Units"),
-  )
+  const [businessUnit, setBusinessUnit] = useState(() => {
+    const saved = read<string>("iti-unit", "All Business Units")
+    return saved === "All Business Units"
+      ? saved
+      : (getBusinessUnitByValue(master.businessUnits, saved)?.id ??
+          "All Business Units")
+  })
   const [theme, setTheme] = useState<"light" | "dark">(() =>
     read("iti-theme", "light"),
   )
@@ -226,7 +245,72 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
   }, [master])
   useEffect(() => {
     setAssets((current) =>
-      current.map((asset) => normalizeAssetClassification(asset, master)),
+      current.map((asset) => {
+        const normalized = normalizeBusinessUnitLocation(asset, master)
+        const classified = normalizeAssetClassification(normalized, master)
+        return classified.businessUnitId === asset.businessUnitId &&
+          classified.locationId === asset.locationId &&
+          classified.businessUnit === asset.businessUnit &&
+          classified.location === asset.location
+          ? asset
+          : classified
+      }),
+    )
+    setTransactions((current) =>
+      current.map((transaction) => {
+        const normalized = normalizeBusinessUnitLocation(transaction, master)
+        return normalized.businessUnitId === transaction.businessUnitId &&
+          normalized.locationId === transaction.locationId &&
+          normalized.businessUnit === transaction.businessUnit &&
+          normalized.location === transaction.location
+          ? transaction
+          : normalized
+      }),
+    )
+    setAudits((current) =>
+      current.map((audit) => {
+        const normalized = normalizeBusinessUnitLocation(audit, master)
+        const items = audit.items.map((item) => {
+          const actual = normalizeBusinessUnitLocation(
+            {
+              businessUnit: normalized.businessUnit,
+              businessUnitId: normalized.businessUnitId,
+              location: item.actualLocation,
+              locationId: item.actualLocationId,
+            },
+            master,
+          )
+          const system = normalizeBusinessUnitLocation(
+            {
+              businessUnit: normalized.businessUnit,
+              businessUnitId: normalized.businessUnitId,
+              location: item.systemLocation,
+              locationId: item.systemLocationId,
+            },
+            master,
+          )
+          return {
+            ...item,
+            actualLocation: actual.location ?? item.actualLocation,
+            actualLocationId: actual.locationId,
+            systemLocation: system.location ?? item.systemLocation,
+            systemLocationId: system.locationId,
+          }
+        })
+        const same =
+          normalized.businessUnitId === audit.businessUnitId &&
+          normalized.locationId === audit.locationId &&
+          normalized.businessUnit === audit.businessUnit &&
+          normalized.location === audit.location &&
+          items.every(
+            (item, index) =>
+              item.actualLocationId === audit.items[index]?.actualLocationId &&
+              item.systemLocationId === audit.items[index]?.systemLocationId,
+          )
+        return same
+          ? audit
+          : { ...normalized, items }
+      }),
     )
   }, [master])
   useEffect(() => {
@@ -290,7 +374,25 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     }
   }, [refreshMasterData])
   const saveAsset = (asset: Asset) => {
-    const normalizedAsset = normalizeAssetClassification(asset, master)
+    const businessUnit = master.businessUnits.find(
+      (unit) => unit.id === asset.businessUnitId,
+    )
+    const location = getLocationsForBusinessUnit(
+      master.locations,
+      asset.businessUnitId ?? "",
+    ).find((item) => item.id === asset.locationId)
+    if (!businessUnit || !location) {
+      notify("Select a Location that belongs to the selected Business Unit")
+      return
+    }
+    const normalizedAsset = normalizeAssetClassification(
+      {
+        ...asset,
+        businessUnit: businessUnit.name,
+        location: location.name,
+      },
+      master,
+    )
     const hasCanonicalClassification = [
       normalizedAsset.categoryId,
       normalizedAsset.groupId,
@@ -355,8 +457,21 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       return false
     }
 
+    const selectedBusinessUnit = master.businessUnits.find(
+      (unit) => unit.id === transaction.businessUnitId,
+    )
+    const selectedLocation = transaction.locationId
+      ? getLocationsForBusinessUnit(
+          master.locations,
+          transaction.businessUnitId ?? "",
+        ).find((location) => location.id === transaction.locationId)
+      : undefined
+    if (!selectedBusinessUnit || (transaction.locationId && !selectedLocation)) {
+      notify("Select a valid Business Unit and a Location belonging to it")
+      return false
+    }
     const requestNumber = reserveRequestNumber(
-      transaction.businessUnit,
+      selectedBusinessUnit.code,
       today(),
       transactions,
     )
@@ -364,7 +479,12 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       notify("Select a valid Business Unit and transaction date")
       return false
     }
-    const tx = normalizeTransaction({ ...transaction, requestNumber })
+    const tx = normalizeTransaction({
+      ...transaction,
+      businessUnit: selectedBusinessUnit.name,
+      location: selectedLocation?.name ?? transaction.location,
+      requestNumber,
+    })
     const rows = tx.assets ?? []
     const assetIds = rows.map((row) => row.assetId)
     const invalidRows =
@@ -395,8 +515,14 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             tx.direction === "In"
               ? asset.quantity + row.quantity
               : Math.max(0, asset.quantity - row.quantity),
-          location: tx.location || asset.location,
-          businessUnit: tx.businessUnit || asset.businessUnit,
+          location: selectedLocation?.name ?? asset.location,
+          locationId: selectedLocation?.id ?? asset.locationId,
+          businessUnit: selectedLocation?.name
+            ? selectedBusinessUnit.name
+            : asset.businessUnit,
+          businessUnitId: selectedLocation
+            ? selectedBusinessUnit.id
+            : asset.businessUnitId,
           condition: tx.type === "Disposal" ? "Disposal" : asset.condition,
           updatedAt: tx.date,
         }
@@ -482,6 +608,20 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       notify("You do not have permission to save this stock opname")
       return
     }
+    const auditBusinessUnit = master.businessUnits.find(
+      (unit) => unit.id === audit.businessUnitId,
+    )
+    const auditLocation = audit.locationId
+      ? getLocationsForBusinessUnit(master.locations, audit.businessUnitId ?? "")
+          .find((location) => location.id === audit.locationId)
+      : undefined
+    if (
+      !auditBusinessUnit ||
+      (audit.locationId && !auditLocation)
+    ) {
+      notify("Select a valid Business Unit and a Location belonging to it")
+      return
+    }
     if (audit.status === "Completed" || existing?.status === "Completed") {
       notify("Completed sessions are locked. Use Complete Audit to finish one.")
       return
@@ -506,7 +646,14 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       notify("Stock opname contains an asset that no longer exists")
       return
     }
-    const next = normalizeAudit(audit, assets)
+    const next = normalizeAudit(
+      {
+        ...audit,
+        businessUnit: auditBusinessUnit.name,
+        location: auditLocation?.name ?? audit.location,
+      },
+      assets,
+    )
     commitAudits((list) =>
       existing
         ? list.map((a) => (a.id === next.id ? next : a))
@@ -553,8 +700,29 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       }
       next.physicalQty = qty
     }
-    if (changes.actualLocation !== undefined)
+    if (changes.actualLocationId !== undefined) {
+      const location = getLocationsForBusinessUnit(
+        master.locations,
+        audit.businessUnitId ?? "",
+      ).find((candidate) => candidate.id === changes.actualLocationId)
+      if (!location) {
+        notify("Select an actual Location within this Business Unit")
+        return
+      }
+      next.actualLocationId = location.id
+      next.actualLocation = location.name
+    } else if (changes.actualLocation !== undefined) {
       next.actualLocation = changes.actualLocation
+      const location = getLocationsForBusinessUnit(
+        master.locations,
+        audit.businessUnitId ?? "",
+      ).find(
+        (candidate) =>
+          candidate.name.toLocaleLowerCase() ===
+          changes.actualLocation?.toLocaleLowerCase(),
+      )
+      next.actualLocationId = location?.id
+    }
     if (changes.notes !== undefined) next.notes = changes.notes
     if (changes.addEvidence?.length)
       next.evidence = [...(item.evidence ?? []), ...changes.addEvidence].slice(
@@ -784,6 +952,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       before: number
       after: number
       location?: string
+      locationId?: string
     }>()
     const items = audit.items.map((item) => {
       let next = item
@@ -796,8 +965,12 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             before: asset.quantity,
             after: next.physicalQty,
             location:
-              options?.updateLocation && next.actualLocation
+              options?.updateLocation && next.actualLocationId
                 ? next.actualLocation
+                : undefined,
+            locationId:
+              options?.updateLocation && next.actualLocationId
+                ? next.actualLocationId
                 : undefined,
           })
           next = {
@@ -817,6 +990,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             ...asset,
             quantity: change.after,
             location: change.location ?? asset.location,
+            locationId: change.locationId ?? asset.locationId,
             updatedAt: day,
           }
         }),
@@ -1122,6 +1296,303 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     }
     notify("Master data saved")
   }
+  const saveBusinessUnit = (nameValue: string, id?: string) => {
+    const name = nameValue.trim()
+    if (!name) {
+      notify("Business Unit name is required")
+      return false
+    }
+    const existing = id
+      ? master.businessUnits.find((unit) => unit.id === id)
+      : undefined
+    if (
+      existing
+        ? !canManageExisting(currentUser)
+        : !canCreateInModule(currentUser, "master-data")
+    ) {
+      notify("You do not have permission to save this Business Unit")
+      return false
+    }
+    if (
+      master.businessUnits.some(
+        (unit) =>
+          unit.id !== existing?.id &&
+          unit.name.trim().toLocaleLowerCase() === name.toLocaleLowerCase(),
+      )
+    ) {
+      notify("Business Unit name already exists")
+      return false
+    }
+    const unitId = existing?.id ?? generateMasterId(master.businessUnits, "businessUnits")
+    const nextUnit: MasterItem = {
+      id: unitId,
+      name,
+      code: generateBusinessUnitCode(name),
+    }
+    if (!existing) reserveMasterId(unitId)
+    setMaster((value) => ({
+      ...value,
+      businessUnits: existing
+        ? value.businessUnits.map((unit) =>
+            unit.id === unitId ? nextUnit : unit,
+          )
+        : [nextUnit, ...value.businessUnits],
+    }))
+    if (existing && existing.name !== name) {
+      setAssets((value) =>
+        value.map((asset) =>
+          asset.businessUnitId === unitId ||
+          (!asset.businessUnitId && asset.businessUnit === existing.name)
+            ? { ...asset, businessUnit: name, businessUnitId: unitId }
+            : asset,
+        ),
+      )
+      setTransactions((value) =>
+        value.map((transaction) =>
+          transaction.businessUnitId === unitId ||
+          (!transaction.businessUnitId &&
+            transaction.businessUnit === existing.name)
+            ? { ...transaction, businessUnit: name, businessUnitId: unitId }
+            : transaction,
+        ),
+      )
+      setAudits((value) =>
+        value.map((audit) =>
+          audit.businessUnitId === unitId ||
+          (!audit.businessUnitId && audit.businessUnit === existing.name)
+            ? { ...audit, businessUnit: name, businessUnitId: unitId }
+            : audit,
+        ),
+      )
+    }
+    const changes = existing
+      ? summarizeChanges(
+          existing as unknown as Record<string, unknown>,
+          nextUnit as unknown as Record<string, unknown>,
+        )
+      : undefined
+    if (!existing || Object.keys(changes ?? {}).length) {
+      recordDataActivity({
+        actor: currentUser,
+        module: "Business Unit",
+        action: existing ? "Update" : "Create",
+        recordId: unitId,
+        recordLabel: name,
+        changes,
+      })
+    }
+    notify(existing ? "Business Unit saved" : "Business Unit created")
+    return true
+  }
+  const saveLocation = (
+    nameValue: string,
+    businessUnitId: string,
+    id?: string,
+  ) => {
+    const name = nameValue.trim()
+    const businessUnit = master.businessUnits.find(
+      (unit) => unit.id === businessUnitId,
+    )
+    if (!name || !businessUnit) {
+      notify("Location name and a valid Business Unit are required")
+      return false
+    }
+    const existing = id
+      ? master.locations.find((location) => location.id === id)
+      : undefined
+    if (
+      existing
+        ? !canManageExisting(currentUser)
+        : !canCreateInModule(currentUser, "master-data")
+    ) {
+      notify("You do not have permission to save this Location")
+      return false
+    }
+    if (existing && existing.businessUnitId !== businessUnitId) {
+      notify("A Location cannot be moved to another Business Unit here")
+      return false
+    }
+    if (
+      master.locations.some(
+        (location) =>
+          location.id !== existing?.id &&
+          location.businessUnitId === businessUnitId &&
+          location.name.trim().toLocaleLowerCase() === name.toLocaleLowerCase(),
+      )
+    ) {
+      notify("This Location name already exists in the selected Business Unit")
+      return false
+    }
+    const locationId =
+      existing?.id ?? generateMasterId(master.locations, "locations")
+    const nextLocation: MasterItem = {
+      ...existing,
+      id: locationId,
+      name,
+      code: existing?.code ?? "",
+      location_id: locationId,
+      location_name: name,
+      businessUnitId,
+    }
+    if (!existing) reserveMasterId(locationId)
+    setMaster((value) => ({
+      ...value,
+      locations: existing
+        ? value.locations.map((location) =>
+            location.id === locationId ? nextLocation : location,
+          )
+        : [...value.locations, nextLocation],
+    }))
+    if (existing && existing.name !== name) {
+      setAssets((value) =>
+        value.map((asset) =>
+          asset.locationId === locationId
+            ? { ...asset, location: name }
+            : asset,
+        ),
+      )
+      setTransactions((value) =>
+        value.map((transaction) =>
+          transaction.locationId === locationId
+            ? { ...transaction, location: name }
+            : transaction,
+        ),
+      )
+      setAudits((value) =>
+        value.map((audit) => ({
+          ...audit,
+          location:
+            audit.locationId === locationId ? name : audit.location,
+          items: audit.items.map((item) => ({
+            ...item,
+            actualLocation:
+              item.actualLocationId === locationId
+                ? name
+                : item.actualLocation,
+            systemLocation:
+              item.systemLocationId === locationId
+                ? name
+                : item.systemLocation,
+          })),
+        })),
+      )
+    }
+    const changes = existing
+      ? summarizeChanges(
+          existing as unknown as Record<string, unknown>,
+          nextLocation as unknown as Record<string, unknown>,
+        )
+      : undefined
+    if (!existing || Object.keys(changes ?? {}).length) {
+      recordDataActivity({
+        actor: currentUser,
+        module: "Location",
+        action: existing ? "Update" : "Create",
+        recordId: locationId,
+        recordLabel: name,
+        changes,
+      })
+    }
+    notify(existing ? "Location saved" : "Location created")
+    return true
+  }
+  const deleteBusinessUnit = (id: string) => {
+    if (!canDelete(currentUser)) {
+      notify("Hanya Admin yang dapat melakukan penghapusan data.")
+      return false
+    }
+    const unit = master.businessUnits.find((item) => item.id === id)
+    if (!unit) return false
+    const hasLocations = master.locations.some(
+      (location) => location.businessUnitId === id,
+    )
+    const hasReferences =
+      assets.some(
+        (asset) =>
+          asset.businessUnitId === id || asset.businessUnit === unit.name,
+      ) ||
+      transactions.some(
+        (transaction) =>
+          transaction.businessUnitId === id ||
+          transaction.businessUnit === unit.name,
+      ) ||
+      audits.some(
+        (audit) => audit.businessUnitId === id || audit.businessUnit === unit.name,
+      )
+    if (hasLocations || hasReferences) {
+      notify(
+        hasLocations
+          ? "Cannot delete this Business Unit while it has Locations. Remove or reassign the Locations first."
+          : "Cannot delete this Business Unit because assets, transactions, or stock opname records still reference it.",
+      )
+      return false
+    }
+    reserveDeletedBusinessUnit(id)
+    reserveMasterId(id)
+    setMaster((value) => ({
+      ...value,
+      businessUnits: value.businessUnits.filter((item) => item.id !== id),
+    }))
+    recordDataActivity({
+      actor: currentUser,
+      module: "Business Unit",
+      action: "Delete",
+      recordId: id,
+      recordLabel: unit.name,
+    })
+    notify("Business Unit deleted")
+    return true
+  }
+  const deleteLocation = (id: string) => {
+    if (!canDelete(currentUser)) {
+      notify("Hanya Admin yang dapat melakukan penghapusan data.")
+      return false
+    }
+    const location = master.locations.find((item) => item.id === id)
+    if (!location) return false
+    const isUsed =
+      assets.some(
+        (asset) =>
+          asset.locationId === id ||
+          (asset.location === location.name &&
+            asset.businessUnitId === location.businessUnitId),
+      ) ||
+      transactions.some(
+        (transaction) =>
+          transaction.locationId === id ||
+          (transaction.location === location.name &&
+            transaction.businessUnitId === location.businessUnitId),
+      ) ||
+      audits.some(
+        (audit) =>
+          audit.locationId === id ||
+          audit.items.some(
+            (item) =>
+              item.actualLocationId === id || item.systemLocationId === id,
+          ),
+      )
+    if (isUsed) {
+      notify(
+        "Cannot delete this Location because assets, transactions, or stock opname records still reference it.",
+      )
+      return false
+    }
+    reserveDeletedLocation(id)
+    reserveMasterId(id)
+    setMaster((value) => ({
+      ...value,
+      locations: value.locations.filter((item) => item.id !== id),
+    }))
+    recordDataActivity({
+      actor: currentUser,
+      module: "Location",
+      action: "Delete",
+      recordId: id,
+      recordLabel: location.name,
+    })
+    notify("Location deleted")
+    return true
+  }
   const deleteMaster = (key: string, id: string) => {
     if (!canDelete(currentUser)) {
       notify("Hanya Admin yang dapat melakukan penghapusan data.")
@@ -1233,6 +1704,10 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       importAssets,
       saveMaster,
       deleteMaster,
+      saveBusinessUnit,
+      saveLocation,
+      deleteBusinessUnit,
+      deleteLocation,
     }),
     [
       assets,
@@ -1249,6 +1724,10 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       masterDataError,
       masterDataRefreshing,
       refreshMasterData,
+      saveBusinessUnit,
+      saveLocation,
+      deleteBusinessUnit,
+      deleteLocation,
     ],
   )
   return <Context.Provider value={value}>{children}</Context.Provider>
