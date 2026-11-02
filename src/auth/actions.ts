@@ -12,71 +12,8 @@ import {
   clearAppSession,
   getCurrentAccountDocument,
   sanitizeAccount,
-  setAppSession,
 } from "@/lib/app-auth"
-import {
-  listAccounts,
-  resolveAccountByNameOrNik,
-} from "@/services/accountService"
-
-const invalidLogin = "Nama/NIK atau password tidak valid."
-const developmentLogin = {
-  nik: "1",
-  enteredPassword: "1",
-  payloadPassword: "111",
-} as const
-
-export async function loginAction(input: {
-  identity: string
-  password: string
-}): Promise<ActionResult<PublicAccount>> {
-  const identity = input.identity.trim()
-  if (!identity || !input.password) {
-    return { success: false, error: "Nama/NIK dan password wajib diisi." }
-  }
-
-  const resolved = await resolveAccountByNameOrNik(identity)
-  if (resolved.ambiguous) {
-    return {
-      success: false,
-      error:
-        "Nama digunakan oleh beberapa akun. Silakan masuk menggunakan NIK.",
-      code: "AMBIGUOUS_NAME",
-    }
-  }
-  if (!resolved.account || resolved.account.is_active !== true) {
-    return { success: false, error: invalidLogin }
-  }
-
-  try {
-    const payload = await getPayload({ config })
-    const password =
-      resolved.account.nik === developmentLogin.nik &&
-      input.password === developmentLogin.enteredPassword
-        ? developmentLogin.payloadPassword
-        : input.password
-    const result = await payload.login({
-      collection: "accounts",
-      data: {
-        username: resolved.account.nik,
-        password,
-      },
-    })
-    if (!result.token) return { success: false, error: invalidLogin }
-    await setAppSession(result.token)
-    return {
-      success: true,
-      data: sanitizeAccount(result.user as never),
-    }
-  } catch {
-    return { success: false, error: invalidLogin }
-  }
-}
-
-export async function logoutAction(): Promise<ActionResult> {
-  await clearAppSession()
-  return { success: true, data: undefined }
-}
+import { listAccounts } from "@/services/accountService"
 
 type ProfileInput = {
   name: string

@@ -1,9 +1,5 @@
-import { redirect } from "next/navigation"
-import { getCurrentAccount } from "@/lib/app-auth"
-import { LoginForm } from "@/components/LoginForm"
+import { LoginRoute } from "@/auth/AuthRoutes"
 
-export default async function LoginPage() {
-  const account = await getCurrentAccount()
-  if (account) redirect("/")
-  return <LoginForm />
+export default function LoginPage() {
+  return <LoginRoute />
 }

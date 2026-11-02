@@ -136,12 +136,6 @@ export function LoginForm() {
             Forgot Password?
           </Button>
         </form>
-        <div className="demo-credentials">
-          <strong>Demo environment</strong>
-          <span>Development: 1 / 1</span>
-          <span>Admin: DEMO-ADM-001 / DemoAdmin!2026</span>
-          <span>Member: DEMO-MBR-001 / DemoMember!2026</span>
-        </div>
         <p className="login-footnote">
           Authorized employees only. Authentication is handled separately from
           Payload CMS administration.
@@ -207,10 +201,7 @@ export function LoginForm() {
               />
             </div>
             <div className="form-actions">
-              <Button
-                variant="secondary"
-                onClick={() => setForgotOpen(false)}
-              >
+              <Button variant="secondary" onClick={() => setForgotOpen(false)}>
                 Back to Login
               </Button>
               <Button disabled={forgotPending} onClick={submitForgot}>

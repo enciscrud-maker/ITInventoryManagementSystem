@@ -1,113 +1,35 @@
-import type {
-  ActionResult,
-  PasswordResetRequestView,
-  PublicAccount,
-} from "./types"
+import { apiRoutes } from "@/config/api-routes"
+import { httpRequest } from "@/lib/http/httpClient"
+import { accountsApi, authApi, profileApi } from "@/services/api"
 
-async function request<T>(
-  url: string,
-  options?: RequestInit,
-): Promise<ActionResult<T>> {
-  try {
-    const response = await fetch(url, {
-      ...options,
-      headers:
-        options?.body instanceof FormData
-          ? options.headers
-          : { "Content-Type": "application/json", ...options?.headers },
-    })
-    const body = await response.text()
-
-    if (body) {
-      try {
-        const result = JSON.parse(body) as ActionResult<T>
-        if (typeof result?.success === "boolean") return result
-      } catch {
-        // Fall through to the consistent client-facing error below.
-      }
-    }
-
-    return {
-      success: false,
-      error: response.ok
-        ? "Respons server tidak valid. Silakan coba lagi."
-        : "Server tidak dapat memproses permintaan. Silakan coba lagi.",
-    }
-  } catch {
-    return {
-      success: false,
-      error: "Tidak dapat terhubung ke server. Silakan coba lagi.",
-    }
-  }
+type PasswordResetSubmission = {
+  message: string
+  emailDelivery: "not-configured"
 }
 
-export const loginAccount = (identity: string, password: string) =>
-  request<PublicAccount>("/app-api/auth/login", {
-    method: "POST",
-    body: JSON.stringify({ identity, password }),
-  })
-
-export const logoutAccount = () =>
-  request<undefined>("/app-api/auth/logout", { method: "POST" })
-
-export const updateProfile = (data: {
-  name: string
-  nik: string
-  position: string
-  department: string
-  business_unit: string
-  remove_photo?: boolean
-}) =>
-  request<PublicAccount>("/app-api/profile", {
-    method: "PATCH",
-    body: JSON.stringify(data),
-  })
-
-export const uploadProfilePhoto = (data: FormData) =>
-  request<PublicAccount>("/app-api/profile/photo", {
-    method: "POST",
-    body: data,
-  })
-
-export const getAccounts = () => request<PublicAccount[]>("/app-api/accounts")
-
-export const createAccount = (data: Record<string, unknown>) =>
-  request<PublicAccount>("/app-api/accounts", {
-    method: "POST",
-    body: JSON.stringify(data),
-  })
-
-export const updateAccount = (id: string, data: Record<string, unknown>) =>
-  request<PublicAccount>("/app-api/accounts", {
-    method: "PATCH",
-    body: JSON.stringify({ id, data }),
-  })
+export const loginAccount = authApi.login
+export const logoutAccount = authApi.logout
+export const getCurrentAccount = authApi.me
+export const updateProfile = profileApi.update
+export const uploadProfilePhoto = profileApi.uploadPhoto
+export const getAccounts = accountsApi.list
+export const createAccount = accountsApi.create
+export const updateAccount = accountsApi.update
+export const getPasswordResetRequests = accountsApi.getPasswordResetRequests
+export const processPasswordReset = accountsApi.processPasswordReset
 
 export const submitPasswordReset = (data: {
   name: string
   nik: string
   email: string
   phone: string
-}) =>
-  request<{ message: string; emailDelivery: "not-configured" }>(
-    "/app-api/password-reset",
-    { method: "POST", body: JSON.stringify(data) },
+}) => {
+  return httpRequest<PasswordResetSubmission>(
+    apiRoutes.app.passwordReset,
+    {
+      method: "POST",
+      body: JSON.stringify(data),
+    },
+    { baseUrl: "same-origin", retryAfterRefresh: false },
   )
-
-export const getPasswordResetRequests = () =>
-  request<{
-    requests: PasswordResetRequestView[]
-    adminEmail: string
-    emailConfigured: false
-  }>("/app-api/password-reset")
-
-export const processPasswordReset = (data: {
-  id: string
-  action: "process" | "reject"
-  newPassword?: string
-  rejectionReason?: string
-}) =>
-  request<PasswordResetRequestView>("/app-api/password-reset", {
-    method: "PATCH",
-    body: JSON.stringify(data),
-  })
+}

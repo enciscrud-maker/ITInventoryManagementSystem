@@ -16,6 +16,7 @@ type AuthState = {
   currentUser: PublicAccount
   isAuthenticated: true
   isPending: boolean
+  logoutError: string
   refreshCurrentUser: (account: PublicAccount) => void
   logout: () => Promise<void>
 }
@@ -30,18 +31,22 @@ export function AuthProvider({
   children: ReactNode
 }) {
   const [currentUser, setCurrentUser] = useState(initialUser)
+  const [logoutError, setLogoutError] = useState("")
   const [isPending, startTransition] = useTransition()
   const router = useRouter()
 
   const logout = async () => {
+    setLogoutError("")
     const result = await logoutAccount()
-    if (result.success) {
-      recordLoginHistory({
-        activityType: "Logout",
-        account: currentUser,
-        result: "Success",
-      })
+    if (!result.success && result.status !== 401) {
+      setLogoutError(result.error)
+      return
     }
+    recordLoginHistory({
+      activityType: "Logout",
+      account: currentUser,
+      result: result.success ? "Success" : "Session expired",
+    })
     startTransition(() => {
       router.replace("/login")
       router.refresh()
@@ -54,6 +59,7 @@ export function AuthProvider({
         currentUser,
         isAuthenticated: true,
         isPending,
+        logoutError,
         refreshCurrentUser: setCurrentUser,
         logout,
       }}
