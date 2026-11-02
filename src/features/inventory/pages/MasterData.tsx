@@ -108,7 +108,7 @@ async function createBackendMasterRecord(
 ): Promise<ApiResult<unknown>> {
   const active = draft.active !== false
   const name = draft.name.trim()
-  const code = draft.code.trim()
+  const code = draft.id.trim()
 
   if (key === "categories") {
     return categoriesApi.create({
@@ -124,7 +124,7 @@ async function createBackendMasterRecord(
     return assetGroupsApi.create({
       catId,
       groupName: name,
-      groupCode: draft.group_code ?? code,
+      groupCode: code,
       groupPrefix: draft.group_code ?? code,
       isActive: active,
     })
@@ -137,7 +137,7 @@ async function createBackendMasterRecord(
       groupId,
       catId,
       typeName: name,
-      typeCode: draft.type_code ?? code,
+      typeCode: code,
       typePrefix: draft.type_code ?? code,
       isActive: active,
     })
@@ -148,7 +148,7 @@ async function createBackendMasterRecord(
     return brandsApi.create({
       typeId,
       brandName: name,
-      brandCode: draft.brand_code ?? code,
+      brandCode: code,
       brandPrefix: draft.brand_code ?? code,
       isActive: active,
     })
