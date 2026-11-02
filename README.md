@@ -18,6 +18,20 @@ browser-to-backend CORS is not required for these auth calls. Cookies use
 The login request sends `{ identifier, password }`. Account profiles are mapped
 from the backend `UserProfileDto`.
 
+## Master-data API
+
+Typed API functions are available from `src/services/api` for brands,
+categories, asset types, asset models, and asset groups. Each resource supports
+`getAll`, `getById`, `create`, and `destroy`; list responses preserve the
+backend pagination fields. Requests use the same-origin proxy, which forwards
+the HTTP-only access token and only allows these resource routes and methods.
+
+The master-data screen loads all pages for those five resources in parallel.
+The signed-in user's in-memory snapshot is reused for 30 seconds, refreshed
+while the app is open and when the tab regains focus, and evicted after
+successful creates or deletes. The screen currently supports create and delete
+against the backend; the API module does not yet expose update.
+
 Payload remains in use for CMS administration and the currently existing
 profile, account-management, and password-reset-request endpoints. Those legacy
 app endpoints still depend on the Payload `app-session` cookie and have not yet
@@ -37,9 +51,11 @@ App accounts cannot access Payload Admin.
 ## Persistence model
 
 - Legacy account-management records and profile media remain Payload records.
-- Existing inventory, transaction, audit, master-data, and preference records
-  retain their previous browser localStorage keys so migration does not reset
-  users' current prototype data.
+- Inventory, transaction, audit, and preference records retain their existing
+  browser localStorage keys. Backend categories, groups, types, brands, and
+  models are reloaded from the API; localStorage is only a temporary snapshot
+  for existing client-side inventory workflows.
+- Locations and conditions remain local-only master data.
 - JSON under `src/data/master/` is build-time seed data. Browser changes do not
   write back to those physical files.
 
