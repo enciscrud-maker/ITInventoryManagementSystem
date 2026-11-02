@@ -17,7 +17,7 @@ import { useInventory } from "@/context/InventoryContext"
 import { useAuth } from "@/auth/AuthContext"
 import {
   canApprove,
-  canCreate,
+  canCreateInModule,
   canUpdate,
 } from "@/services/authorizationService"
 import type { Audit } from "@/data/demoData"
@@ -263,8 +263,12 @@ export default function Audits() {
           title={selected.name}
           subtitle={`${selected.id} · ${selected.businessUnit} · ${selected.location}`}
           actions={
-            <>
-              <Button variant="secondary" onClick={() => setSelectedId(null)}>
+            <div className="grid w-full grid-cols-2 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:justify-end">
+              <Button
+                variant="secondary"
+                className="col-span-2 sm:col-auto"
+                onClick={() => setSelectedId(null)}
+              >
                 Back to sessions
               </Button>
               {!locked && (
@@ -285,11 +289,7 @@ export default function Audits() {
                   </Button>
                 </>
               )}
-              <Button
-                variant="secondary"
-                disabled={exporting}
-                onClick={exportEvidence}
-              >
+              <Button variant="secondary" disabled={exporting} onClick={exportEvidence}>
                 <FileText size={16} />{" "}
                 {exporting ? "Building PDF…" : "Export Evidence"}
               </Button>
@@ -298,18 +298,15 @@ export default function Audits() {
               </Button>
               {!locked && (
                 <Button
+                  className="col-span-2 sm:col-auto"
                   disabled={!approver}
-                  title={
-                    approver
-                      ? undefined
-                      : "Only approvers can complete a stock opname"
-                  }
+                  title={approver ? undefined : "Only approvers can complete a stock opname"}
                   onClick={() => setComplete(true)}
                 >
                   <CheckCircle2 size={16} /> Complete Audit
                 </Button>
               )}
-            </>
+            </div>
           }
         />
         {scannerOpen && editable && (
@@ -624,7 +621,7 @@ export default function Audits() {
         subtitle="Compare system inventory with physical verification results."
         actions={
           <Button
-            disabled={!canCreate(currentUser)}
+            disabled={!canCreateInModule(currentUser, "stock-opname")}
             onClick={() => setCreate(true)}
           >
             <Plus size={16} /> Create Audit Session

@@ -75,6 +75,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
     setBusinessUnit,
     assets,
     transactions,
+    audits,
     setSelectedAsset,
     toast,
   } = useInventory()
@@ -96,6 +97,14 @@ export function AppLayout({ children }: { children: ReactNode }) {
       : pathname === "/accounts"
         ? "Account Management"
         : "IT Inventory")
+  const auditAlertCount = audits
+    .flatMap((audit) => audit.items)
+    .filter(
+      (item) => item.finding !== "Match" && item.finding !== "Unverified",
+    ).length
+  const pendingTransaction = transactions.find(
+    (transaction) => transaction.status === "In Progress",
+  )
 
   const results = useMemo(() => {
     if (search.length < 2) return []
@@ -250,8 +259,12 @@ export function AppLayout({ children }: { children: ReactNode }) {
             {alerts && (
               <div className="popover notification-popover">
                 <strong>Notifications</strong>
-                <p>3 audit findings need attention.</p>
-                <p>Goods-Out DSP-2026-014 is pending.</p>
+                <p>{auditAlertCount} audit findings need attention.</p>
+                <p>
+                  {pendingTransaction
+                    ? `${pendingTransaction.document} is pending.`
+                    : "No pending transactions."}
+                </p>
               </div>
             )}
           </div>

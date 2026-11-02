@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react"
 import { Download, Printer, BarChart3, FileText } from "lucide-react"
 import { useInventory } from "@/context/InventoryContext"
+import { useAuth } from "@/auth/AuthContext"
+import { canCreateInModule } from "@/services/authorizationService"
 import { downloadCsv, formatDate } from "@/utils/helpers"
 import {
   Badge,
@@ -23,7 +25,10 @@ const reports = [
   "Asset Movement History",
 ]
 export default function Reports() {
-  const { assets, transactions, audits, master, businessUnit } = useInventory()
+  const { assets, transactions, audits, master, businessUnit, notify } =
+    useInventory()
+  const { currentUser } = useAuth()
+  const reportAllowed = canCreateInModule(currentUser, "reports")
   const [report, setReport] = useState(reports[0])
   const [generated, setGenerated] = useState(false)
   const [filters, setFilters] = useState({
@@ -144,6 +149,13 @@ export default function Reports() {
       : report === "Stock Opname Discrepancy Report"
         ? discrepancies
         : groups
+  const requireReportPermission = (action: () => void) => {
+    if (!reportAllowed) {
+      notify("You do not have permission to generate or export reports")
+      return
+    }
+    action()
+  }
   return (
     <div className="page print-area">
       <PageHeader
@@ -154,19 +166,23 @@ export default function Reports() {
             <Button
               variant="secondary"
               onClick={() =>
-                downloadCsv(
-                  `${report.toLowerCase().replace(/ /g, "-")}.csv`,
-                  tableRows,
+                requireReportPermission(() =>
+                  downloadCsv(
+                    `${report.toLowerCase().replace(/ /g, "-")}.csv`,
+                    tableRows,
+                  ),
                 )
               }
-              disabled={!generated}
+              disabled={!generated || !reportAllowed}
             >
               <Download size={16} /> CSV
             </Button>
             <Button
               variant="secondary"
-              onClick={() => window.print()}
-              disabled={!generated}
+              onClick={() =>
+                requireReportPermission(() => window.print())
+              }
+              disabled={!generated || !reportAllowed}
             >
               <Printer size={16} /> Print
             </Button>
@@ -287,7 +303,12 @@ export default function Reports() {
               ]}
             />
           </div>
-          <Button onClick={() => setGenerated(true)}>
+          <Button
+            disabled={!reportAllowed}
+            onClick={() =>
+              requireReportPermission(() => setGenerated(true))
+            }
+          >
             <BarChart3 size={16} /> Generate Report
           </Button>
         </div>

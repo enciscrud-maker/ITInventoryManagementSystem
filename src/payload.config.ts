@@ -9,6 +9,7 @@ import { Folders } from "./collections/Folders"
 import { Tags } from "./collections/Tags"
 import { Posts } from "./collections/Posts"
 import { Accounts } from "./collections/Accounts"
+import { PasswordResetRequests } from "./collections/PasswordResetRequests"
 
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
@@ -32,7 +33,15 @@ export default buildFigmaConfig({
     fallbackLanguage: "en",
     supportedLanguages: { en: adminLanguage },
   },
-  collections: [Admins, Accounts, Media, Folders, Tags, Posts],
+  collections: [
+    Admins,
+    Accounts,
+    PasswordResetRequests,
+    Media,
+    Folders,
+    Tags,
+    Posts,
+  ],
   localization: {
     locales: [{ code: "en", label: "English" }],
     fallback: true,

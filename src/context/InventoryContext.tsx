@@ -49,10 +49,11 @@ import {
 import { useAuth } from "../auth/AuthContext"
 import {
   canApprove,
-  canCreate,
+  canCreateInModule,
   canDelete,
-  canUpdate,
+  canManageExisting,
 } from "../services/authorizationService"
+import { reserveRequestNumber } from "../utils/requestNumber"
 import { today } from "../utils/helpers"
 import {
   MAX_EVIDENCE_PER_ASSET,
@@ -241,6 +242,14 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       return
     }
     const existing = assets.find((item) => item.id === normalizedAsset.id)
+    if (
+      existing
+        ? !canManageExisting(currentUser)
+        : !canCreateInModule(currentUser, "asset-inventory")
+    ) {
+      notify("You do not have permission to save this asset")
+      return
+    }
     setAssets((v) =>
       v.some((a) => a.id === normalizedAsset.id)
         ? v.map((a) => (a.id === normalizedAsset.id ? normalizedAsset : a))
@@ -265,6 +274,12 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     notify("Asset saved successfully")
   }
   const saveTransaction = (transaction: Transaction) => {
+    const permission =
+      transaction.direction === "In" ? "goods-in" : "goods-out"
+    if (!canCreateInModule(currentUser, permission)) {
+      notify(`You do not have permission to create Goods ${transaction.direction}`)
+      return false
+    }
     if (
       transactions.some(
         (existing) =>
@@ -276,7 +291,16 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       return false
     }
 
-    const tx = normalizeTransaction(transaction)
+    const requestNumber = reserveRequestNumber(
+      transaction.businessUnit,
+      today(),
+      transactions,
+    )
+    if (!requestNumber) {
+      notify("Select a valid Business Unit and transaction date")
+      return false
+    }
+    const tx = normalizeTransaction({ ...transaction, requestNumber })
     const rows = tx.assets ?? []
     const assetIds = rows.map((row) => row.assetId)
     const invalidRows =
@@ -329,6 +353,10 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     status: TransactionStatus,
     notes?: string,
   ) => {
+    if (!canManageExisting(currentUser)) {
+      notify("Only Admin can update existing transactions")
+      return false
+    }
     const transaction = transactions.find((item) => item.id === id)
     if (!transaction || transaction.status === status) return false
     const timestamp = new Date().toISOString()
@@ -382,7 +410,11 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
   const saveAudit = (audit: Audit) => {
     const existing = findAudit(audit.id)
-    if (!(existing ? canUpdate(currentUser) : canCreate(currentUser))) {
+    if (
+      existing
+        ? !canManageExisting(currentUser)
+        : !canCreateInModule(currentUser, "stock-opname")
+    ) {
       notify("You do not have permission to save this stock opname")
       return
     }
@@ -438,7 +470,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       notify("Completed sessions are locked")
       return
     }
-    if (!canUpdate(currentUser)) {
+    if (!canManageExisting(currentUser)) {
       notify("You do not have permission to update this stock opname")
       return
     }
@@ -519,7 +551,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     if (!audit) return { ok: false, message: "Session not found" }
     if (audit.status === "Completed")
       return { ok: false, message: "This session is completed" }
-    if (!canUpdate(currentUser))
+    if (!canManageExisting(currentUser))
       return { ok: false, message: "You do not have permission to scan" }
     const clean = code.trim()
     const assetId = matchAssetId(
@@ -575,7 +607,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       notify("This session is locked")
       return 0
     }
-    if (!canUpdate(currentUser)) {
+    if (!canManageExisting(currentUser)) {
       notify("You do not have permission to import quantities")
       return 0
     }
@@ -639,7 +671,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
   const resolveUnscannedAudit = (auditId: string) => {
     const audit = findAudit(auditId)
     if (!audit || audit.status === "Completed") return 0
-    if (!canUpdate(currentUser)) {
+    if (!canManageExisting(currentUser)) {
       notify("You do not have permission to update this stock opname")
       return 0
     }
@@ -778,6 +810,23 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     return true
   }
   const saveMaster = (key: string, item: MasterItem) => {
+    const existingRecord = master[key]?.some(
+      (candidate) =>
+        candidate.id === item.id ||
+        candidate.category_id === item.category_id ||
+        candidate.group_id === item.group_id ||
+        candidate.type_id === item.type_id ||
+        candidate.brand_id === item.brand_id ||
+        candidate.model_id === item.model_id,
+    )
+    if (
+      existingRecord
+        ? !canManageExisting(currentUser)
+        : !canCreateInModule(currentUser, "master-data")
+    ) {
+      notify("You do not have permission to save this master record")
+      return
+    }
     if (key === "categories") {
       const categoryId = item.category_id ?? item.id
       const existing = master.categories.find(
@@ -1071,6 +1120,10 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     return true
   }
   const importAssets = (items: Asset[]) => {
+    if (!canCreateInModule(currentUser, "asset-inventory")) {
+      notify("You do not have permission to import assets")
+      return
+    }
     setAssets((value) => [
       ...items.map((asset) => normalizeAssetClassification(asset, master)),
       ...value,

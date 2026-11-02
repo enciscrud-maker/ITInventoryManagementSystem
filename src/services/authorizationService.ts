@@ -1,4 +1,8 @@
-import type { AccountRole, PublicAccount } from "@/auth/types"
+import type {
+  AccountRole,
+  PagePermission,
+  PublicAccount,
+} from "@/auth/types"
 
 export type PermissionAction = "view" | "create" | "update" | "delete" | "approve"
 
@@ -12,8 +16,8 @@ const permissions: Record<AccountRole, Record<PermissionAction, boolean>> = {
   },
   Member: {
     view: true,
-    create: true,
-    update: true,
+    create: false,
+    update: false,
     delete: false,
     approve: false,
   },
@@ -40,3 +44,17 @@ export const canDelete = (
 export const canApprove = (
   user: Pick<PublicAccount, "role"> | null | undefined,
 ) => canPerformAction(user, "approve")
+
+export function canCreateInModule(
+  user: Pick<PublicAccount, "role" | "page_permissions"> | null | undefined,
+  module: PagePermission,
+) {
+  if (!user) return false
+  return user.role === "Admin" || user.page_permissions.includes(module)
+}
+
+export function canManageExisting(
+  user: Pick<PublicAccount, "role"> | null | undefined,
+) {
+  return user?.role === "Admin"
+}

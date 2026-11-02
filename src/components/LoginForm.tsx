@@ -4,14 +4,25 @@ import { useState, useTransition, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 import { Boxes, LockKeyhole } from "lucide-react"
 import { loginAccount } from "@/auth/client"
+import { submitPasswordReset } from "@/auth/client"
 import { recordLoginHistory } from "@/services/historyService"
-import { Button, Input, PasswordInput } from "./ui"
+import { Button, Input, Modal, PasswordInput } from "./ui"
 
 export function LoginForm() {
   const [identity, setIdentity] = useState("")
   const [password, setPassword] = useState("")
   const [visible, setVisible] = useState(false)
   const [error, setError] = useState("")
+  const [forgotOpen, setForgotOpen] = useState(false)
+  const [forgotError, setForgotError] = useState("")
+  const [forgotMessage, setForgotMessage] = useState("")
+  const [forgotPending, setForgotPending] = useState(false)
+  const [forgot, setForgot] = useState({
+    name: "",
+    nik: "",
+    email: "",
+    phone: "",
+  })
   const [pending, startTransition] = useTransition()
   const router = useRouter()
 
@@ -41,6 +52,34 @@ export function LoginForm() {
     })
   }
 
+  const submitForgot = async () => {
+    setForgotError("")
+    setForgotMessage("")
+    if (
+      !forgot.name.trim() ||
+      !forgot.nik.trim() ||
+      !forgot.email.trim() ||
+      !forgot.phone.trim()
+    ) {
+      setForgotError("Complete all required fields.")
+      return
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(forgot.email.trim())) {
+      setForgotError("Enter a valid email address.")
+      return
+    }
+    setForgotPending(true)
+    const result = await submitPasswordReset(forgot)
+    setForgotPending(false)
+    if (!result.success) {
+      setForgotError(result.error)
+      return
+    }
+    setForgotMessage(
+      `${result.data.message} Email delivery is not configured yet; the request is available in Account Management.`,
+    )
+  }
+
   return (
     <main className="login-page">
       <section className="login-card" aria-labelledby="login-title">
@@ -49,7 +88,7 @@ export function LoginForm() {
             <Boxes size={22} />
           </span>
           <div>
-            <strong>IT Inventory Management</strong>
+            <strong>I-Track</strong>
             <span>Internal Asset Management System</span>
           </div>
         </div>
@@ -86,6 +125,16 @@ export function LoginForm() {
           <Button type="submit" disabled={pending}>
             {pending ? "Signing in..." : "Sign In"}
           </Button>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setForgotOpen(true)
+              setForgotError("")
+              setForgotMessage("")
+            }}
+          >
+            Forgot Password?
+          </Button>
         </form>
         <div className="demo-credentials">
           <strong>Demo environment</strong>
@@ -98,6 +147,79 @@ export function LoginForm() {
           Payload CMS administration.
         </p>
       </section>
+      <Modal
+        open={forgotOpen}
+        title="Forgot Password"
+        description="Submit your registered Member details for Admin verification."
+        onClose={() => setForgotOpen(false)}
+      >
+        {forgotMessage ? (
+          <>
+            <div className="scope-preview">{forgotMessage}</div>
+            <div className="form-actions">
+              <Button
+                onClick={() => {
+                  setForgotOpen(false)
+                  setForgotMessage("")
+                  setForgot({ name: "", nik: "", email: "", phone: "" })
+                }}
+              >
+                Back to Login
+              </Button>
+            </div>
+          </>
+        ) : (
+          <>
+            {forgotError && (
+              <div className="error-summary" role="alert">
+                {forgotError}
+              </div>
+            )}
+            <div className="form-grid">
+              <Input
+                label="Full Name *"
+                value={forgot.name}
+                onChange={(event) =>
+                  setForgot({ ...forgot, name: event.target.value })
+                }
+              />
+              <Input
+                label="NIK *"
+                value={forgot.nik}
+                onChange={(event) =>
+                  setForgot({ ...forgot, nik: event.target.value })
+                }
+              />
+              <Input
+                label="Email *"
+                type="email"
+                value={forgot.email}
+                onChange={(event) =>
+                  setForgot({ ...forgot, email: event.target.value })
+                }
+              />
+              <Input
+                label="Phone Number *"
+                value={forgot.phone}
+                onChange={(event) =>
+                  setForgot({ ...forgot, phone: event.target.value })
+                }
+              />
+            </div>
+            <div className="form-actions">
+              <Button
+                variant="secondary"
+                onClick={() => setForgotOpen(false)}
+              >
+                Back to Login
+              </Button>
+              <Button disabled={forgotPending} onClick={submitForgot}>
+                {forgotPending ? "Submitting..." : "Submit Request"}
+              </Button>
+            </div>
+          </>
+        )}
+      </Modal>
     </main>
   )
 }

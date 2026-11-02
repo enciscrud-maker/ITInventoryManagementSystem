@@ -11,6 +11,7 @@ const isAccountAdminField: FieldAccess = ({ req }) =>
   req.user?.collection === "accounts" && req.user.role === "Admin"
 
 const canReadAccount: Access = ({ req }) => {
+  if (req.context.passwordResetLookup === true) return true
   if (req.user?.collection !== "accounts") return false
   if (req.user.role === "Admin") return true
   return { id: { equals: req.user.id } }
@@ -120,6 +121,14 @@ export const Accounts: CollectionConfig = {
       index: true,
     },
     {
+      name: "email",
+      type: "email",
+    },
+    {
+      name: "phone",
+      type: "text",
+    },
+    {
       name: "profile_photo",
       type: "upload",
       relationTo: "media",
@@ -130,6 +139,24 @@ export const Accounts: CollectionConfig = {
       required: true,
       defaultValue: "Member",
       options: ["Admin", "Member"],
+      access: {
+        create: isAccountAdminField,
+        update: isAccountAdminField,
+      },
+    },
+    {
+      name: "page_permissions",
+      type: "select",
+      hasMany: true,
+      defaultValue: [],
+      options: [
+        { label: "Asset Inventory", value: "asset-inventory" },
+        { label: "Goods In", value: "goods-in" },
+        { label: "Goods Out", value: "goods-out" },
+        { label: "Stock Opname", value: "stock-opname" },
+        { label: "Master Data", value: "master-data" },
+        { label: "Reports & Exports", value: "reports" },
+      ],
       access: {
         create: isAccountAdminField,
         update: isAccountAdminField,

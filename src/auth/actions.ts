@@ -2,7 +2,12 @@ import "server-only"
 
 import config from "@payload-config"
 import { getPayload } from "payload"
-import type { ActionResult, AccountRole, PublicAccount } from "./types"
+import type {
+  ActionResult,
+  AccountRole,
+  PagePermission,
+  PublicAccount,
+} from "./types"
 import {
   clearAppSession,
   getCurrentAccountDocument,
@@ -166,12 +171,29 @@ type AccountInput = {
   name: string
   nik: string
   password?: string
+  email?: string
+  phone?: string
   role: AccountRole
+  page_permissions?: PagePermission[]
   position: string
   department: string
   business_unit: string
   is_active?: boolean
 }
+
+const allowedPagePermissions: PagePermission[] = [
+  "asset-inventory",
+  "goods-in",
+  "goods-out",
+  "stock-opname",
+  "master-data",
+  "reports",
+]
+
+const validPagePermissions = (input: PagePermission[] | undefined) =>
+  (input ?? []).filter((permission) =>
+    allowedPagePermissions.includes(permission),
+  )
 
 export async function getAccountsAction(): Promise<ActionResult<PublicAccount[]>> {
   try {
@@ -203,6 +225,11 @@ export async function createAccountAction(
   }
   if (!["Admin", "Member"].includes(input.role))
     return { success: false, error: "Invalid role." }
+  if (input.password && input.password.length < 8)
+    return {
+      success: false,
+      error: "The new password must contain at least 8 characters.",
+    }
 
   try {
     const payload = await getPayload({ config })
@@ -212,9 +239,15 @@ export async function createAccountAction(
         account_id: "AUTO",
         name: input.name.trim(),
         nik: input.nik.trim(),
+        email: input.email?.trim() || undefined,
+        phone: input.phone?.trim() || undefined,
         username: input.nik.trim(),
         password: input.password,
         role: input.role,
+        page_permissions:
+          input.role === "Member"
+            ? validPagePermissions(input.page_permissions)
+            : [],
         position: input.position.trim(),
         department: input.department.trim(),
         business_unit: input.business_unit.trim(),
@@ -234,13 +267,18 @@ export async function createAccountAction(
 
 export async function updateAccountAction(
   id: string,
-  input: Omit<AccountInput, "password">,
+  input: AccountInput,
 ): Promise<ActionResult<PublicAccount>> {
   const admin = await getCurrentAccountDocument()
   if (!admin || admin.role !== "Admin")
     return { success: false, error: "Only Admin can update accounts." }
   if (!["Admin", "Member"].includes(input.role))
     return { success: false, error: "Invalid role." }
+  if (input.password && input.password.length < 8)
+    return {
+      success: false,
+      error: "The new password must contain at least 8 characters.",
+    }
 
   try {
     const payload = await getPayload({ config })
@@ -250,12 +288,19 @@ export async function updateAccountAction(
       data: {
         name: input.name.trim(),
         nik: input.nik.trim(),
+        email: input.email?.trim() || null,
+        phone: input.phone?.trim() || null,
         username: input.nik.trim(),
         role: input.role,
+        page_permissions:
+          input.role === "Member"
+            ? validPagePermissions(input.page_permissions)
+            : [],
         position: input.position.trim(),
         department: input.department.trim(),
         business_unit: input.business_unit.trim(),
         is_active: input.is_active,
+        ...(input.password ? { password: input.password } : {}),
       },
       user: admin,
       overrideAccess: false,

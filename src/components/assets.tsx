@@ -11,6 +11,8 @@ import {
   QrCode,
 } from "lucide-react"
 import { useInventory } from "../context/InventoryContext"
+import { useAuth } from "../auth/AuthContext"
+import { canManageExisting } from "../services/authorizationService"
 import type { Asset } from "../data/demoData"
 import {
   generateAssetId,
@@ -458,6 +460,8 @@ export function AssetForm({
 export function AssetDrawer() {
   const { selectedAsset, setSelectedAsset, transactions, saveAsset } =
     useInventory()
+  const { currentUser } = useAuth()
+  const manageAllowed = canManageExisting(currentUser)
   const [tab, setTab] = useState("Overview")
   const [editing, setEditing] = useState(false)
   const [dispose, setDispose] = useState(false)
@@ -518,19 +522,23 @@ export function AssetDrawer() {
           <Badge>{selectedAsset.condition}</Badge>
         </div>
         <div className="drawer-actions">
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => setEditing(true)}
-          >
-            <Edit3 size={15} /> Edit
-          </Button>
+          {manageAllowed && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => setEditing(true)}
+            >
+              <Edit3 size={15} /> Edit
+            </Button>
+          )}
           <Button size="sm" variant="secondary" onClick={() => window.print()}>
             <Printer size={15} /> Print QR
           </Button>
-          <Button size="sm" variant="danger" onClick={() => setDispose(true)}>
-            <Trash2 size={15} /> Disposal
-          </Button>
+          {manageAllowed && (
+            <Button size="sm" variant="danger" onClick={() => setDispose(true)}>
+              <Trash2 size={15} /> Disposal
+            </Button>
+          )}
         </div>
         <Tabs
           items={["Overview", "Transaction History", "Documents / Attachments"]}

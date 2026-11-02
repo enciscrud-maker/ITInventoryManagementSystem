@@ -1,25 +1,27 @@
 "use client"
 
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import {
-  Boxes,
-  PackagePlus,
-  PackageMinus,
-  ClipboardCheck,
+  AlertTriangle,
+  ArrowDownLeft,
   ArrowRight,
+  ArrowUpRight,
+  ClipboardCheck,
+  PackageCheck,
+  PackageMinus,
+  PackagePlus,
+  RotateCcw,
 } from "lucide-react"
 import {
-  PieChart,
-  Pie,
-  Cell,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  LabelList,
   ResponsiveContainer,
   Tooltip,
-  BarChart,
-  Bar,
   XAxis,
   YAxis,
-  CartesianGrid,
 } from "recharts"
 import { useInventory } from "@/context/InventoryContext"
 import {
@@ -27,70 +29,128 @@ import {
   Button,
   EmptyState,
   PageHeader,
+  SearchInput,
+  Select,
   StatCard,
 } from "@/components/ui"
+import { appSettings } from "@/config/appSettings"
 import { formatDate } from "@/utils/helpers"
 
-const colors = ["#2563eb", "#16a34a", "#f59e0b", "#8b5cf6", "#64748b"]
+const isAvailable = (condition: string, quantity: number) =>
+  condition.toLocaleLowerCase() === "good" && quantity > 0
+
 export default function Dashboard() {
   const { assets, transactions, audits, businessUnit, setSelectedAsset } =
     useInventory()
   const router = useRouter()
-  const scoped = assets.filter(
-    (a) =>
-      businessUnit === "All Business Units" || a.businessUnit === businessUnit,
+  const [categoryFilter, setCategoryFilter] = useState("")
+  const [itemSearch, setItemSearch] = useState("")
+  const scoped = useMemo(
+    () =>
+      assets.filter(
+        (asset) =>
+          businessUnit === "All Business Units" ||
+          asset.businessUnit === businessUnit,
+      ),
+    [assets, businessUnit],
   )
-  const tx = transactions.filter(
-    (t) =>
-      businessUnit === "All Business Units" || t.businessUnit === businessUnit,
+  const tx = useMemo(
+    () =>
+      transactions.filter(
+        (transaction) =>
+          businessUnit === "All Business Units" ||
+          transaction.businessUnit === businessUnit,
+      ),
+    [businessUnit, transactions],
   )
-  const category = useMemo(
+  const categories = [...new Set(scoped.map((asset) => asset.category))].sort()
+  const filteredAssets = useMemo(() => {
+    const query = itemSearch.trim().toLocaleLowerCase()
+    return scoped.filter(
+      (asset) =>
+        (!categoryFilter || asset.category === categoryFilter) &&
+        (!query ||
+          [
+            asset.id,
+            asset.model,
+            asset.brand,
+            asset.serial,
+            `${asset.brand} ${asset.model}`,
+          ]
+            .join(" ")
+            .toLocaleLowerCase()
+            .includes(query)),
+    )
+  }, [categoryFilter, itemSearch, scoped])
+  const units = useMemo(
     () =>
       Object.entries(
-        scoped.reduce<Record<string, number>>(
-          (m, a) => ({ ...m, [a.category]: (m[a.category] ?? 0) + a.quantity }),
-          {},
-        ),
-      ).map(([name, value]) => ({ name, value })),
-    [scoped],
-  )
-  const groups = useMemo(
-    () =>
-      Object.entries(
-        scoped.reduce<Record<string, number>>(
-          (m, a) => ({ ...m, [a.group]: (m[a.group] ?? 0) + a.quantity }),
-          {},
-        ),
+        scoped.reduce<Record<string, number>>((totals, asset) => {
+          totals[asset.businessUnit] =
+            (totals[asset.businessUnit] ?? 0) + asset.quantity
+          return totals
+        }, {}),
       )
         .map(([name, value]) => ({ name, value }))
-        .sort((a, b) => b.value - a.value),
+        .sort((left, right) => right.value - left.value),
     [scoped],
   )
-  const units = [
-    "MBP",
-    "HBI",
-    "AL",
-    "SMT",
-    "BGN",
-    "PBMM",
-    "IMPT",
-    "SDM",
-    "IBT",
-  ].map((name) => ({
-    name,
-    value: scoped
-      .filter((a) => a.businessUnit === name)
-      .reduce((s, a) => s + a.quantity, 0),
-  }))
-  const findings = audits
-    .flatMap((a) => a.items)
-    .filter((i) => i.finding !== "Match" && i.finding !== "Unverified")
-  const findingGroups = Object.entries(
-    findings.reduce<Record<string, number>>(
-      (m, i) => ({ ...m, [i.finding]: (m[i.finding] ?? 0) + 1 }),
-      {},
-    ),
+  const availableAssets = scoped.filter((asset) =>
+    isAvailable(asset.condition, asset.quantity),
   )
+  const availableQuantity = availableAssets.reduce(
+    (total, asset) => total + asset.quantity,
+    0,
+  )
+  const lowStock = scoped
+    .filter((asset) => asset.condition !== "Disposal")
+    .map((asset) => ({
+      ...asset,
+      availableQuantity: isAvailable(asset.condition, asset.quantity)
+        ? asset.quantity
+        : 0,
+    }))
+    .filter(
+      (asset) =>
+        asset.availableQuantity <= appSettings.lowStockThreshold ||
+        asset.quantity <= appSettings.lowStockThreshold,
+    )
+    .sort((left, right) => left.availableQuantity - right.availableQuantity)
+  const recentTransactions = tx
+    .flatMap((transaction) => {
+      const rows = transaction.assets?.length
+        ? transaction.assets
+        : [
+            {
+              rowId: `${transaction.id}-dashboard`,
+              assetId: transaction.assetId,
+              itemName: transaction.assetId,
+              quantity: transaction.quantity,
+            },
+          ]
+      return rows.map((row) => ({
+        transaction,
+        row,
+        asset: assets.find((asset) => asset.id === row.assetId),
+      }))
+    })
+    .sort(
+      (left, right) =>
+        new Date(right.transaction.date).getTime() -
+        new Date(left.transaction.date).getTime(),
+    )
+    .slice(0, 6)
+  const findings = audits
+    .flatMap((audit) => audit.items)
+    .filter(
+      (item) => item.finding !== "Match" && item.finding !== "Unverified",
+    )
+  const currentMonth = new Date().toISOString().slice(0, 7)
+  const resetFilters = () => {
+    setCategoryFilter("")
+    setItemSearch("")
+  }
+
   return (
     <div className="page">
       <PageHeader
@@ -104,198 +164,341 @@ export default function Dashboard() {
           </span>
         }
       />
-      <div className="stat-grid">
-        <StatCard
-          label="Total Assets"
-          value={scoped.reduce((s, a) => s + a.quantity, 0)}
-          icon={<Boxes size={20} />}
-          note={`${scoped.length} asset records`}
-        />
-        <StatCard
-          label="Assets In — This Month"
-          value={tx
-            .filter(
-              (t) => t.direction === "In" && t.date.slice(0, 7) === "2026-09",
-            )
-            .reduce((s, t) => s + t.quantity, 0)}
-          icon={<PackagePlus size={20} />}
-        />
-        <StatCard
-          label="Assets Out — This Month"
-          value={tx
-            .filter(
-              (t) => t.direction === "Out" && t.date.slice(0, 7) === "2026-09",
-            )
-            .reduce((s, t) => s + t.quantity, 0)}
-          icon={<PackageMinus size={20} />}
-        />
-        <StatCard
-          label="Pending Audit Findings"
-          value={findings.length}
-          icon={<ClipboardCheck size={20} />}
-          note="Confirmed discrepancies"
-        />
-      </div>
-      <div className="dashboard-grid">
-        <article className="chart-card">
-          <header>
+
+      <div className="dashboard-summary-grid">
+        <article className="table-card total-assets-card">
+          <header className="card-header">
             <div>
-              <h2>Asset Distribution by Category</h2>
-              <p>Quantity across active inventory</p>
+              <h2>Total Assets Item</h2>
+              <p>Live inventory totals with combined filters</p>
             </div>
+            {(categoryFilter || itemSearch) && (
+              <Button variant="ghost" size="sm" onClick={resetFilters}>
+                <RotateCcw size={14} /> Reset
+              </Button>
+            )}
           </header>
-          <div className="donut-wrap">
-            <ResponsiveContainer width="60%" height={250}>
-              <PieChart>
-                <Pie
-                  data={category}
-                  dataKey="value"
-                  nameKey="name"
-                  innerRadius={65}
-                  outerRadius={92}
-                  paddingAngle={2}
-                >
-                  {category.map((_, i) => (
-                    <Cell key={i} fill={colors[i % colors.length]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="chart-legend">
-              {category.map((d) => (
-                <div key={d.name}>
-                  <i />
-                  <span>{d.name}</span>
-                  <strong>{d.value}</strong>
-                </div>
-              ))}
+          <div className="total-assets-body">
+            <div className="asset-metric">
+              <span>Total units</span>
+              <strong>
+                {filteredAssets.reduce(
+                  (total, asset) => total + asset.quantity,
+                  0,
+                )}
+              </strong>
+            </div>
+            <div className="asset-metric">
+              <span>Distinct items</span>
+              <strong>{filteredAssets.length}</strong>
+            </div>
+            <div className="asset-filter-row">
+              <Select
+                aria-label="Filter assets by category"
+                value={categoryFilter}
+                onChange={(event) => setCategoryFilter(event.target.value)}
+                options={[
+                  { value: "", label: "All categories" },
+                  ...categories,
+                ]}
+              />
+              <SearchInput
+                value={itemSearch}
+                onChange={(event) => setItemSearch(event.target.value)}
+                placeholder="Item name, ID, brand, serial..."
+              />
             </div>
           </div>
         </article>
-        <article className="chart-card">
-          <header>
-            <div>
-              <h2>Asset Count by Group</h2>
-              <p>Inventory composition</p>
-            </div>
-          </header>
-          <ResponsiveContainer width="100%" height={250}>
-            <BarChart data={groups} margin={{ left: 2, right: 10, bottom: 36 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} />
-              <XAxis
-                dataKey="name"
-                interval={0}
-                angle={-22}
-                textAnchor="end"
-                fontSize={11}
-              />
-              <YAxis fontSize={11} />
-              <Tooltip />
-              <Bar dataKey="value" fill="#2563eb" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </article>
-        <article className="chart-card chart-wide">
-          <header>
-            <div>
-              <h2>Asset Count by Business Unit</h2>
-              <p>Quantity by organizational unit</p>
-            </div>
-          </header>
-          <ResponsiveContainer width="100%" height={260}>
+        <div className="stat-grid dashboard-compact-stats">
+          <StatCard
+            label="Available Assets"
+            value={availableQuantity}
+            icon={<PackageCheck size={20} />}
+            note={`${availableAssets.length} distinct items`}
+          />
+          <StatCard
+            label="Assets In — This Month"
+            value={tx
+              .filter(
+                (transaction) =>
+                  transaction.direction === "In" &&
+                  transaction.date.slice(0, 7) === currentMonth,
+              )
+              .reduce((total, transaction) => total + transaction.quantity, 0)}
+            icon={<PackagePlus size={20} />}
+          />
+          <StatCard
+            label="Assets Out — This Month"
+            value={tx
+              .filter(
+                (transaction) =>
+                  transaction.direction === "Out" &&
+                  transaction.date.slice(0, 7) === currentMonth,
+              )
+              .reduce((total, transaction) => total + transaction.quantity, 0)}
+            icon={<PackageMinus size={20} />}
+          />
+          <StatCard
+            label="Pending Audit Findings"
+            value={findings.length}
+            icon={<ClipboardCheck size={20} />}
+            note="Confirmed discrepancies"
+          />
+        </div>
+      </div>
+
+      <article className="chart-card dashboard-business-unit-chart">
+        <header>
+          <div>
+            <h2>Asset Count by Business Unit</h2>
+            <p>Current asset quantity by organizational unit</p>
+          </div>
+        </header>
+        {units.length ? (
+          <ResponsiveContainer
+            width="100%"
+            height={Math.max(240, units.length * 38)}
+          >
             <BarChart
               data={units}
               layout="vertical"
-              margin={{ left: 5, right: 30 }}
+              margin={{ left: 8, right: 54 }}
             >
               <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-              <XAxis type="number" fontSize={11} />
-              <YAxis type="category" dataKey="name" width={48} fontSize={11} />
+              <XAxis type="number" fontSize={11} allowDecimals={false} />
+              <YAxis
+                type="category"
+                dataKey="name"
+                width={72}
+                fontSize={11}
+              />
               <Tooltip />
-              <Bar dataKey="value" fill="#2563eb" radius={[0, 4, 4, 0]} />
+              <Bar
+                dataKey="value"
+                fill="var(--primary)"
+                radius={[0, 4, 4, 0]}
+              >
+                <LabelList
+                  dataKey="value"
+                  position="right"
+                  className="chart-value-label"
+                />
+              </Bar>
             </BarChart>
           </ResponsiveContainer>
-        </article>
-      </div>
-      <div className="dashboard-grid lower-grid">
+        ) : (
+          <EmptyState
+            title="No business unit data"
+            description="Asset quantities will appear after inventory records are added."
+          />
+        )}
+      </article>
+
+      <div className="dashboard-data-grid">
         <article className="table-card">
           <header className="card-header">
             <div>
-              <h2>Recent Transactions</h2>
-              <p>Latest inventory movements</p>
+              <h2>Available Assets</h2>
+              <p>{availableQuantity} units ready for use or assignment</p>
             </div>
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => router.push("/goods-in")}
+              onClick={() => router.push("/assets")}
             >
               View all <ArrowRight size={14} />
             </Button>
           </header>
-          <div className="table-scroll">
+          <div className="table-scroll dashboard-table">
             <table>
               <thead>
                 <tr>
-                  <th>Asset</th>
-                  <th>Type</th>
-                  <th>Document</th>
-                  <th>User</th>
-                  <th>Date</th>
+                  <th>Asset Name</th>
+                  <th>Asset ID</th>
+                  <th>Category</th>
+                  <th>Brand</th>
+                  <th>Available</th>
+                  <th>Business Unit</th>
                   <th>Status</th>
                 </tr>
               </thead>
               <tbody>
-                {tx.slice(0, 5).map((t) => (
+                {availableAssets.slice(0, 6).map((asset) => (
                   <tr
-                    key={t.id}
-                    onClick={() =>
-                      setSelectedAsset(
-                        assets.find((a) => a.id === t.assetId) ?? null,
-                      )
-                    }
+                    key={asset.id}
+                    onClick={() => setSelectedAsset(asset)}
                   >
+                    <td>{asset.model}</td>
                     <td>
-                      <code>{t.assetId}</code>
+                      <code>{asset.id}</code>
                     </td>
+                    <td>{asset.category}</td>
+                    <td>{asset.brand}</td>
+                    <td className="numeric">{asset.quantity}</td>
+                    <td>{asset.businessUnit}</td>
                     <td>
-                      <Badge>{t.direction}</Badge>
-                    </td>
-                    <td>{t.document}</td>
-                    <td>{t.user}</td>
-                    <td>{formatDate(t.date)}</td>
-                    <td>
-                      <Badge>{t.status}</Badge>
+                      <Badge tone="success">Available</Badge>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            {!availableAssets.length && (
+              <EmptyState
+                title="No available assets"
+                description="Good-condition inventory with positive quantity will appear here."
+              />
+            )}
           </div>
         </article>
-        <article className="alerts-card">
-          <header>
+
+        <article className="table-card">
+          <header className="card-header">
             <div>
-              <h2>Audit Alerts</h2>
-              <p>Unresolved physical findings</p>
+              <h2>Recent Asset Transactions</h2>
+              <p>Latest Goods In and Goods Out activity</p>
             </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() =>
+                router.push(
+                  recentTransactions[0]?.transaction.direction === "Out"
+                    ? "/goods-out"
+                    : "/goods-in",
+                )
+              }
+            >
+              View all <ArrowRight size={14} />
+            </Button>
           </header>
-          {findingGroups.length ? (
-            findingGroups.map(([name, count]) => (
-              <button key={name} onClick={() => router.push("/audits")}>
-                <Badge>{name}</Badge>
-                <strong>{count}</strong>
-                <ArrowRight size={15} />
-              </button>
-            ))
-          ) : (
-            <EmptyState
-              title="No discrepancies"
-              description="All verified records match."
-            />
-          )}
+          <div className="transaction-activity-list">
+            {recentTransactions.map(({ transaction, row, asset }) => (
+              <div key={`${transaction.id}-${row.rowId}`}>
+                <i
+                  className={
+                    transaction.direction === "In"
+                      ? "activity-in"
+                      : "activity-out"
+                  }
+                >
+                  {transaction.direction === "In" ? (
+                    <ArrowDownLeft size={16} />
+                  ) : (
+                    <ArrowUpRight size={16} />
+                  )}
+                </i>
+                <section>
+                  <strong>
+                    {row.itemName ||
+                      (asset
+                        ? `${asset.brand} ${asset.model}`
+                        : row.assetId)}
+                  </strong>
+                  <span>
+                    {transaction.requestNumber || transaction.document} ·{" "}
+                    {transaction.party?.name || transaction.user}
+                  </span>
+                  <small>
+                    {transaction.businessUnit} · {formatDate(transaction.date)}
+                  </small>
+                </section>
+                <div>
+                  <Badge>
+                    {transaction.direction === "In" ? "In" : "Out"}
+                  </Badge>
+                  <strong>{row.quantity}</strong>
+                  <small>{transaction.status}</small>
+                </div>
+              </div>
+            ))}
+            {!recentTransactions.length && (
+              <EmptyState
+                title="No recent transactions"
+                description="Goods In and Goods Out activity will appear here."
+              />
+            )}
+          </div>
         </article>
       </div>
+
+      <article className="table-card low-stock-panel">
+        <header className="card-header">
+          <div>
+            <h2>Low Stock & Availability Alerts</h2>
+            <p>
+              Default attention threshold: {appSettings.lowStockThreshold} units
+            </p>
+          </div>
+          <div className="low-stock-actions">
+            <Badge tone={lowStock.length ? "warning" : "success"}>
+              {lowStock.length} requiring attention
+            </Badge>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => router.push("/assets")}
+            >
+              View all <ArrowRight size={14} />
+            </Button>
+          </div>
+        </header>
+        <div className="table-scroll dashboard-table">
+          <table>
+            <thead>
+              <tr>
+                <th>Asset Name</th>
+                <th>Asset Code</th>
+                <th>Category</th>
+                <th>Total Qty</th>
+                <th>Available Qty</th>
+                <th>Threshold</th>
+                <th>Alert</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lowStock.slice(0, 8).map((asset) => {
+                const alert =
+                  asset.availableQuantity === 0
+                    ? "Out of Stock"
+                    : asset.quantity <= appSettings.lowStockThreshold
+                      ? "Low Stock"
+                      : "Limited Availability"
+                return (
+                  <tr key={asset.id}>
+                    <td>{asset.model}</td>
+                    <td>
+                      <code>{asset.id}</code>
+                    </td>
+                    <td>{asset.category}</td>
+                    <td className="numeric">{asset.quantity}</td>
+                    <td className="numeric">{asset.availableQuantity}</td>
+                    <td className="numeric">
+                      {appSettings.lowStockThreshold}
+                    </td>
+                    <td>
+                      <Badge
+                        tone={
+                          alert === "Out of Stock" ? "danger" : "warning"
+                        }
+                      >
+                        <AlertTriangle size={12} /> {alert}
+                      </Badge>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+          {!lowStock.length && (
+            <EmptyState
+              title="Availability is healthy"
+              description="No active inventory is below the configured threshold."
+            />
+          )}
+        </div>
+      </article>
     </div>
   )
 }

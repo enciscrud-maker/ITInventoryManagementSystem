@@ -2,9 +2,20 @@
 
 import { useEffect, useMemo, useState, useTransition } from "react"
 import { Edit3, Plus } from "lucide-react"
-import type { AccountRole, PublicAccount } from "@/auth/types"
+import type {
+  AccountRole,
+  PagePermission,
+  PasswordResetRequestView,
+  PublicAccount,
+} from "@/auth/types"
 import { useAuth } from "@/auth/AuthContext"
-import { createAccount, getAccounts, updateAccount } from "@/auth/client"
+import {
+  createAccount,
+  getAccounts,
+  getPasswordResetRequests,
+  processPasswordReset,
+  updateAccount,
+} from "@/auth/client"
 import { businessUnits } from "@/data/demoData"
 import {
   getDataActivityHistory,
@@ -33,7 +44,10 @@ type AccountDraft = {
   name: string
   nik: string
   password: string
+  email: string
+  phone: string
   role: AccountRole
+  page_permissions: PagePermission[]
   position: string
   department: string
   business_unit: string
@@ -44,13 +58,29 @@ const tabs = [
   "Account Management — Add Account",
   "Login/Logout History",
   "Data Activity History",
+  "Password Reset Requests",
+]
+
+const permissionOptions: Array<{
+  value: PagePermission
+  label: string
+}> = [
+  { value: "asset-inventory", label: "Asset Inventory" },
+  { value: "goods-in", label: "Goods In" },
+  { value: "goods-out", label: "Goods Out" },
+  { value: "stock-opname", label: "Stock Opname" },
+  { value: "master-data", label: "Master Data" },
+  { value: "reports", label: "Reports & Exports" },
 ]
 
 const emptyDraft: AccountDraft = {
   name: "",
   nik: "",
   password: "",
+  email: "",
+  phone: "",
   role: "Member",
+  page_permissions: [],
   position: "",
   department: "",
   business_unit: businessUnits[0],
@@ -107,6 +137,17 @@ export default function AccountsPage() {
   const [activityEnd, setActivityEnd] = useState("")
   const [activityAction, setActivityAction] = useState("")
   const [draft, setDraft] = useState<AccountDraft | null>(null)
+  const [resetRequests, setResetRequests] = useState<
+    PasswordResetRequestView[]
+  >([])
+  const [resetAdminEmail, setResetAdminEmail] = useState("")
+  const [selectedReset, setSelectedReset] =
+    useState<PasswordResetRequestView | null>(null)
+  const [resetAction, setResetAction] = useState<"process" | "reject">(
+    "process",
+  )
+  const [newPassword, setNewPassword] = useState("")
+  const [rejectionReason, setRejectionReason] = useState("")
   const [error, setError] = useState("")
   const [pending, startTransition] = useTransition()
 
@@ -122,8 +163,18 @@ export default function AccountsPage() {
       else setError(result.error)
     })
 
+  const loadResetRequests = () =>
+    startTransition(async () => {
+      const result = await getPasswordResetRequests()
+      if (result.success) {
+        setResetRequests(result.data.requests)
+        setResetAdminEmail(result.data.adminEmail)
+      } else setError(result.error)
+    })
+
   useEffect(() => {
     load()
+    loadResetRequests()
     refreshHistory()
     return subscribeHistory(refreshHistory)
   }, [])
@@ -182,7 +233,10 @@ export default function AccountsPage() {
       name: account.name,
       nik: account.nik,
       password: "",
+      email: account.email,
+      phone: account.phone,
       role: account.role,
+      page_permissions: account.page_permissions,
       position: account.position,
       department: account.department,
       business_unit: account.business_unit,
@@ -221,6 +275,41 @@ export default function AccountsPage() {
       }
       setDraft(null)
       load()
+    })
+  }
+
+  const resolveResetRequest = () => {
+    if (!selectedReset) return
+    setError("")
+    startTransition(async () => {
+      const result = await processPasswordReset({
+        id: selectedReset.id,
+        action: resetAction,
+        newPassword: resetAction === "process" ? newPassword : undefined,
+        rejectionReason:
+          resetAction === "reject" ? rejectionReason : undefined,
+      })
+      if (!result.success) {
+        setError(result.error)
+        return
+      }
+      recordDataActivity({
+        actor: currentUser,
+        module: "Account Management",
+        action: "Update",
+        recordId: result.data.account_id,
+        recordLabel: result.data.member_name,
+        changes: {
+          passwordResetStatus: {
+            before: selectedReset.status,
+            after: result.data.status,
+          },
+        },
+      })
+      setSelectedReset(null)
+      setNewPassword("")
+      setRejectionReason("")
+      loadResetRequests()
     })
   }
 
@@ -541,6 +630,70 @@ export default function AccountsPage() {
             </div>
           </>
         )}
+
+        {activeTab === tabs[3] && (
+          <>
+            <div className="scope-preview account-reset-notice">
+              Requests are saved securely. Notification target:{" "}
+              <strong>{resetAdminEmail || "Not configured"}</strong>. Automatic
+              email delivery is not configured.
+            </div>
+            <div className="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Request ID</th>
+                    <th>Member</th>
+                    <th>NIK</th>
+                    <th>Email / Phone</th>
+                    <th>Request Date</th>
+                    <th>Status</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {resetRequests.map((request) => (
+                    <tr key={request.id}>
+                      <td>
+                        <code>{request.request_id}</code>
+                      </td>
+                      <td>{request.member_name}</td>
+                      <td>{request.nik}</td>
+                      <td>
+                        {request.email}
+                        <small>{request.phone}</small>
+                      </td>
+                      <td>{formatTimestamp(request.request_date)}</td>
+                      <td>
+                        <Badge>{request.status}</Badge>
+                      </td>
+                      <td>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setSelectedReset(request)
+                            setResetAction("process")
+                            setNewPassword("")
+                            setRejectionReason("")
+                          }}
+                        >
+                          View
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {!resetRequests.length && (
+                <EmptyState
+                  title="No password reset requests"
+                  description="Member requests submitted from Login will appear here."
+                />
+              )}
+            </div>
+          </>
+        )}
       </section>
 
       <Modal
@@ -567,17 +720,30 @@ export default function AccountsPage() {
                   setDraft({ ...draft, nik: event.target.value })
                 }
               />
-              {!draft.id && (
-                <Input
-                  label="Initial Password *"
-                  type="password"
-                  minLength={8}
-                  value={draft.password}
-                  onChange={(event) =>
-                    setDraft({ ...draft, password: event.target.value })
-                  }
-                />
-              )}
+              <Input
+                label={draft.id ? "New Password (optional)" : "Initial Password *"}
+                type="password"
+                minLength={8}
+                value={draft.password}
+                onChange={(event) =>
+                  setDraft({ ...draft, password: event.target.value })
+                }
+              />
+              <Input
+                label="Email"
+                type="email"
+                value={draft.email}
+                onChange={(event) =>
+                  setDraft({ ...draft, email: event.target.value })
+                }
+              />
+              <Input
+                label="Phone Number"
+                value={draft.phone}
+                onChange={(event) =>
+                  setDraft({ ...draft, phone: event.target.value })
+                }
+              />
               <Select
                 label="Role *"
                 value={draft.role}
@@ -585,6 +751,10 @@ export default function AccountsPage() {
                   setDraft({
                     ...draft,
                     role: event.target.value as AccountRole,
+                    page_permissions:
+                      event.target.value === "Admin"
+                        ? []
+                        : draft.page_permissions,
                   })
                 }
                 options={["Admin", "Member"]}
@@ -625,6 +795,38 @@ export default function AccountsPage() {
                 />
               )}
             </div>
+            {draft.role === "Member" && (
+              <fieldset className="permission-fieldset">
+                <legend>Page Permissions</legend>
+                <p>
+                  Checked permissions allow this Member to view and create in
+                  the module. Edit and delete remain Admin-only.
+                </p>
+                <div className="permission-grid">
+                  {permissionOptions.map((permission) => (
+                    <label key={permission.value}>
+                      <input
+                        type="checkbox"
+                        checked={draft.page_permissions.includes(
+                          permission.value,
+                        )}
+                        onChange={(event) =>
+                          setDraft({
+                            ...draft,
+                            page_permissions: event.target.checked
+                              ? [...draft.page_permissions, permission.value]
+                              : draft.page_permissions.filter(
+                                  (value) => value !== permission.value,
+                                ),
+                          })
+                        }
+                      />
+                      <span>{permission.label}</span>
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
+            )}
             <div className="form-actions">
               <Button variant="secondary" onClick={() => setDraft(null)}>
                 Cancel
@@ -632,6 +834,100 @@ export default function AccountsPage() {
               <Button disabled={pending} onClick={save}>
                 {pending ? "Saving..." : "Save Account"}
               </Button>
+            </div>
+          </>
+        )}
+      </Modal>
+      <Modal
+        open={!!selectedReset}
+        title="Password Reset Request"
+        description={selectedReset?.request_id}
+        onClose={() => setSelectedReset(null)}
+      >
+        {selectedReset && (
+          <>
+            <div className="detail-section">
+              <dl>
+                <div>
+                  <dt>Member</dt>
+                  <dd>{selectedReset.member_name}</dd>
+                </div>
+                <div>
+                  <dt>NIK</dt>
+                  <dd>{selectedReset.nik}</dd>
+                </div>
+                <div>
+                  <dt>Email</dt>
+                  <dd>{selectedReset.email}</dd>
+                </div>
+                <div>
+                  <dt>Phone</dt>
+                  <dd>{selectedReset.phone}</dd>
+                </div>
+                <div>
+                  <dt>Status</dt>
+                  <dd>
+                    <Badge>{selectedReset.status}</Badge>
+                  </dd>
+                </div>
+              </dl>
+            </div>
+            {selectedReset.status === "Pending" && (
+              <>
+                <Select
+                  label="Admin Action"
+                  value={resetAction}
+                  onChange={(event) =>
+                    setResetAction(
+                      event.target.value as "process" | "reject",
+                    )
+                  }
+                  options={[
+                    { value: "process", label: "Approve and set password" },
+                    { value: "reject", label: "Reject request" },
+                  ]}
+                />
+                {resetAction === "process" ? (
+                  <Input
+                    label="New Password *"
+                    type="password"
+                    minLength={8}
+                    value={newPassword}
+                    onChange={(event) => setNewPassword(event.target.value)}
+                  />
+                ) : (
+                  <Input
+                    label="Rejection Reason"
+                    value={rejectionReason}
+                    onChange={(event) =>
+                      setRejectionReason(event.target.value)
+                    }
+                  />
+                )}
+              </>
+            )}
+            {error && <div className="error-summary">{error}</div>}
+            <div className="form-actions">
+              <Button
+                variant="secondary"
+                onClick={() => setSelectedReset(null)}
+              >
+                Close
+              </Button>
+              {selectedReset.status === "Pending" && (
+                <Button
+                  variant={resetAction === "reject" ? "danger" : "primary"}
+                  disabled={
+                    pending ||
+                    (resetAction === "process" && newPassword.length < 8)
+                  }
+                  onClick={resolveResetRequest}
+                >
+                  {resetAction === "process"
+                    ? "Confirm Password Change"
+                    : "Reject Request"}
+                </Button>
+              )}
             </div>
           </>
         )}

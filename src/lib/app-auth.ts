@@ -1,7 +1,7 @@
 import config from "@payload-config"
 import { getPayload } from "payload"
 import { cookies } from "next/headers"
-import type { PublicAccount } from "@/auth/types"
+import type { PagePermission, PublicAccount } from "@/auth/types"
 import type { Account } from "@/payload-types"
 
 export const APP_SESSION_COOKIE = "app-session"
@@ -13,8 +13,11 @@ export function sanitizeAccount(account: Account): PublicAccount {
     account_id: account.account_id,
     name: account.name,
     nik: account.nik,
+    email: account.email ?? "",
+    phone: account.phone ?? "",
     profile_photo: typeof photo === "object" && photo?.url ? photo.url : "",
     role: account.role,
+    page_permissions: (account.page_permissions ?? []) as PagePermission[],
     position: account.position,
     department: account.department,
     business_unit: account.business_unit,

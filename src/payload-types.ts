@@ -62,19 +62,20 @@ export type SupportedTimezones =
   | 'Pacific/Fiji';
 /**
  * This interface was referenced by `Config`'s JSON-Schema
- * via the `definition` "LexicalNodes_ED9AB6BC".
+ * via the `definition` "LexicalNodes_B9DD0AB8".
  */
-export type LexicalNodes_ED9AB6BC =
+export type LexicalNodes_B9DD0AB8 =
   | SerializedTextNode
   | SerializedTabNode
   | SerializedLineBreakNode
-  | SerializedParagraphNode<LexicalNodes_ED9AB6BC>
+  | SerializedParagraphNode<LexicalNodes_B9DD0AB8>
   | SerializedHorizontalRuleNode
   | SerializedUploadNode<'media'>
-  | SerializedQuoteNode<LexicalNodes_ED9AB6BC>
+  | SerializedQuoteNode<LexicalNodes_B9DD0AB8>
   | SerializedRelationshipNode<
       | 'admins'
       | 'accounts'
+      | 'password-reset-requests'
       | 'folders'
       | 'tags'
       | 'posts'
@@ -83,11 +84,11 @@ export type LexicalNodes_ED9AB6BC =
       | 'payload-preferences'
       | 'payload-migrations'
     >
-  | SerializedAutoLinkNode<LexicalNodes_ED9AB6BC, LexicalLinkFields>
-  | SerializedLinkNode<LexicalNodes_ED9AB6BC, LexicalLinkFields>
-  | SerializedListNode<LexicalNodes_ED9AB6BC>
-  | SerializedListItemNode<LexicalNodes_ED9AB6BC>
-  | SerializedHeadingNode<LexicalNodes_ED9AB6BC>;
+  | SerializedAutoLinkNode<LexicalNodes_B9DD0AB8, LexicalLinkFields>
+  | SerializedLinkNode<LexicalNodes_B9DD0AB8, LexicalLinkFields>
+  | SerializedListNode<LexicalNodes_B9DD0AB8>
+  | SerializedListItemNode<LexicalNodes_B9DD0AB8>
+  | SerializedHeadingNode<LexicalNodes_B9DD0AB8>;
 /**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "LexicalNodes_3DE324E4".
@@ -110,6 +111,7 @@ export interface Config {
   collections: {
     admins: Admin;
     accounts: Account;
+    'password-reset-requests': PasswordResetRequest;
     media: Media;
     folders: Folder;
     tags: Tag;
@@ -124,6 +126,7 @@ export interface Config {
   collectionsSelect: {
     admins: AdminsSelect<false> | AdminsSelect<true>;
     accounts: AccountsSelect<false> | AccountsSelect<true>;
+    'password-reset-requests': PasswordResetRequestsSelect<false> | PasswordResetRequestsSelect<true>;
     media: MediaSelect<false> | MediaSelect<true>;
     folders: FoldersSelect<false> | FoldersSelect<true>;
     tags: TagsSelect<false> | TagsSelect<true>;
@@ -230,8 +233,11 @@ export interface Account {
   account_id: string;
   name: string;
   nik: string;
+  phone?: string | null;
   profile_photo?: (string | null) | Media;
   role: 'Admin' | 'Member';
+  page_permissions?:
+    ('asset-inventory' | 'goods-in' | 'goods-out' | 'stock-opname' | 'master-data' | 'reports')[] | null;
   position: string;
   department: string;
   business_unit: string;
@@ -383,12 +389,50 @@ export interface Tag {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "password-reset-requests".
+ */
+export interface PasswordResetRequest {
+  id: string;
+  request_id: string;
+  account: string | Account;
+  member_name: string;
+  nik: string;
+  email: string;
+  phone: string;
+  request_date: string;
+  status: 'Pending' | 'Processed' | 'Rejected';
+  processed_by?: (string | null) | Account;
+  processed_at?: string | null;
+  rejection_reason?: string | null;
+  createdBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'accounts';
+        value: string | Account;
+      } | null);
+  updatedBy?:
+    | ({
+        relationTo: 'admins';
+        value: string | Admin;
+      } | null)
+    | ({
+        relationTo: 'accounts';
+        value: string | Account;
+      } | null);
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "posts".
  */
 export interface Post {
   id: string;
   title: string;
-  content?: LexicalRichText<LexicalNodes_ED9AB6BC> | null;
+  content?: LexicalRichText<LexicalNodes_B9DD0AB8> | null;
   createdBy?:
     | ({
         relationTo: 'admins';
@@ -441,6 +485,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'accounts';
         value: string | Account;
+      } | null)
+    | ({
+        relationTo: 'password-reset-requests';
+        value: string | PasswordResetRequest;
       } | null)
     | ({
         relationTo: 'media';
@@ -565,8 +613,10 @@ export interface AccountsSelect<T extends boolean = true> {
   account_id?: T;
   name?: T;
   nik?: T;
+  phone?: T;
   profile_photo?: T;
   role?: T;
+  page_permissions?: T;
   position?: T;
   department?: T;
   business_unit?: T;
@@ -584,6 +634,27 @@ export interface AccountsSelect<T extends boolean = true> {
   resetPasswordRequestedAt?: T;
   loginAttempts?: T;
   lockUntil?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "password-reset-requests_select".
+ */
+export interface PasswordResetRequestsSelect<T extends boolean = true> {
+  request_id?: T;
+  account?: T;
+  member_name?: T;
+  nik?: T;
+  email?: T;
+  phone?: T;
+  request_date?: T;
+  status?: T;
+  processed_by?: T;
+  processed_at?: T;
+  rejection_reason?: T;
+  createdBy?: T;
+  updatedBy?: T;
+  updatedAt?: T;
+  createdAt?: T;
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema

@@ -15,6 +15,11 @@ import {
   Trash2,
 } from "lucide-react"
 import { useInventory } from "@/context/InventoryContext"
+import { useAuth } from "@/auth/AuthContext"
+import {
+  canCreateInModule,
+  canManageExisting,
+} from "@/services/authorizationService"
 import type { Asset, MasterItem } from "@/data/demoData"
 import { downloadCsv, today } from "@/utils/helpers"
 import { AssetForm } from "@/components/assets"
@@ -314,6 +319,9 @@ export default function AssetInventory() {
     notify,
     saveAsset,
   } = useInventory()
+  const { currentUser } = useAuth()
+  const createAllowed = canCreateInModule(currentUser, "asset-inventory")
+  const manageAllowed = canManageExisting(currentUser)
   const [search, setSearch] = useState("")
   const [filtersOpen, setFiltersOpen] = useState(true)
   const [filters, setFilters] = useState<Record<string, string>>({})
@@ -569,7 +577,10 @@ export default function AssetInventory() {
         title="Asset Inventory"
         subtitle={`Manage, search, and maintain IT asset records · ${filtered.length} matching records`}
         actions={
-          <Button onClick={() => setFormAsset(null)}>
+          <Button
+            disabled={!createAllowed}
+            onClick={() => setFormAsset(null)}
+          >
             <Plus size={16} /> Add Asset
           </Button>
         }
@@ -620,6 +631,7 @@ export default function AssetInventory() {
         </div>
         <Button
           variant="secondary"
+          disabled={!createAllowed}
           onClick={() => {
             setImportOpen(true)
             setImportRows([])
@@ -716,13 +728,15 @@ export default function AssetInventory() {
               >
                 <Download size={15} /> Export
               </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => setMoveOpen(true)}
-              >
-                <MapPin size={15} /> Move Location
-              </Button>
+              {manageAllowed && (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => setMoveOpen(true)}
+                >
+                  <MapPin size={15} /> Move Location
+                </Button>
+              )}
               <Button size="sm" variant="ghost" onClick={() => setSelected([])}>
                 Clear
               </Button>
@@ -822,12 +836,14 @@ export default function AssetInventory() {
                     {isVisible("UOM") && <td>{a.uom}</td>}
                     {isVisible("Last Updated") && <td>{a.updatedAt}</td>}
                     <td onClick={(e) => e.stopPropagation()}>
-                      <IconButton
-                        label="Edit asset"
-                        onClick={() => setFormAsset(a)}
-                      >
-                        <Edit3 size={16} />
-                      </IconButton>
+                      {manageAllowed && (
+                        <IconButton
+                          label="Edit asset"
+                          onClick={() => setFormAsset(a)}
+                        >
+                          <Edit3 size={16} />
+                        </IconButton>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -961,7 +977,7 @@ export default function AssetInventory() {
         </div>
       </Modal>
       <Modal
-        open={moveOpen}
+        open={manageAllowed && moveOpen}
         title={`Move ${selected.length} assets`}
         description="This bulk action updates the current location of selected records."
         onClose={() => setMoveOpen(false)}

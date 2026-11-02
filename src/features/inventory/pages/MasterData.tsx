@@ -4,7 +4,11 @@ import { useMemo, useState } from "react"
 import { Edit3, Plus, Trash2 } from "lucide-react"
 import { useInventory } from "@/context/InventoryContext"
 import { useAuth } from "@/auth/AuthContext"
-import { canDelete } from "@/services/authorizationService"
+import {
+  canCreateInModule,
+  canDelete,
+  canManageExisting,
+} from "@/services/authorizationService"
 import type { Asset, MasterItem } from "@/data/demoData"
 import {
   createCategoryRecord,
@@ -65,6 +69,8 @@ const entityName: Record<MasterKey, string> = {
 
 export default function MasterData() {
   const { assets, master, saveMaster, deleteMaster } = useInventory()
+  const { currentUser } = useAuth()
+  const createAllowed = canCreateInModule(currentUser, "master-data")
   const [tab, setTab] = useState("Category")
   const [search, setSearch] = useState("")
   const [categoryFilter, setCategoryFilter] = useState("")
@@ -245,7 +251,7 @@ export default function MasterData() {
         title="Master Data"
         subtitle="Kelola hierarki klasifikasi, referensi aset, dan ID otomatis dari satu tempat."
         actions={
-          <Button onClick={() => openEdit()}>
+          <Button disabled={!createAllowed} onClick={() => openEdit()}>
             <Plus size={16} /> Add New
           </Button>
         }
@@ -923,12 +929,15 @@ function ActionCell({
 }) {
   const { currentUser } = useAuth()
   const allowed = canDelete(currentUser)
+  const canEdit = canManageExisting(currentUser)
   return (
     <td>
       <div className="row-actions">
-        <Button size="sm" variant="ghost" onClick={() => onEdit(item)}>
-          <Edit3 size={14} /> Edit
-        </Button>
+        {canEdit && (
+          <Button size="sm" variant="ghost" onClick={() => onEdit(item)}>
+            <Edit3 size={14} /> Edit
+          </Button>
+        )}
         <Button
           size="sm"
           variant="ghost"

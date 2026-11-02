@@ -1,4 +1,8 @@
-import type { ActionResult, PublicAccount } from "./types"
+import type {
+  ActionResult,
+  PasswordResetRequestView,
+  PublicAccount,
+} from "./types"
 
 async function request<T>(
   url: string,
@@ -77,4 +81,33 @@ export const updateAccount = (id: string, data: Record<string, unknown>) =>
   request<PublicAccount>("/app-api/accounts", {
     method: "PATCH",
     body: JSON.stringify({ id, data }),
+  })
+
+export const submitPasswordReset = (data: {
+  name: string
+  nik: string
+  email: string
+  phone: string
+}) =>
+  request<{ message: string; emailDelivery: "not-configured" }>(
+    "/app-api/password-reset",
+    { method: "POST", body: JSON.stringify(data) },
+  )
+
+export const getPasswordResetRequests = () =>
+  request<{
+    requests: PasswordResetRequestView[]
+    adminEmail: string
+    emailConfigured: false
+  }>("/app-api/password-reset")
+
+export const processPasswordReset = (data: {
+  id: string
+  action: "process" | "reject"
+  newPassword?: string
+  rejectionReason?: string
+}) =>
+  request<PasswordResetRequestView>("/app-api/password-reset", {
+    method: "PATCH",
+    body: JSON.stringify(data),
   })

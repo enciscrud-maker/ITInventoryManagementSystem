@@ -20,6 +20,12 @@ import type {
 } from "@/data/demoData"
 import { businessUnits, locations } from "@/data/demoData"
 import { formatDate, today } from "@/utils/helpers"
+import { previewRequestNumber } from "@/utils/requestNumber"
+import { useAuth } from "@/auth/AuthContext"
+import {
+  canCreateInModule,
+  canManageExisting,
+} from "@/services/authorizationService"
 import {
   Badge,
   Button,
@@ -107,24 +113,6 @@ const generateDocumentNumber = (
     document = `${prefix}-${stamp}-${suffix}`
   }
   return document
-}
-
-const generateRequestNumber = (
-  businessUnit: string,
-  issueDate: string,
-  existing: Transaction[],
-) => {
-  const [year = "", month = "", day = ""] = issueDate.split("-")
-  if (!businessUnit || !year || !month || !day) return ""
-  const base = `${businessUnit}/${day}/${month}/${year.slice(-2)}`
-  const taken = new Set(existing.map((item) => item.requestNumber))
-  let sequence = 1
-  let requestNumber = base
-  while (taken.has(requestNumber)) {
-    sequence += 1
-    requestNumber = `${base}-${sequence}`
-  }
-  return requestNumber
 }
 
 const totalAssets = (transaction: Transaction) =>
@@ -336,6 +324,12 @@ export default function Transactions({
     saveTransaction,
     updateTransactionStatus,
   } = useInventory()
+  const { currentUser } = useAuth()
+  const createAllowed = canCreateInModule(
+    currentUser,
+    direction === "In" ? "goods-in" : "goods-out",
+  )
+  const manageAllowed = canManageExisting(currentUser)
   const incoming = direction === "In"
   const types = incoming ? goodsInTypes : goodsOutTypes
   const [open, setOpen] = useState(false)
@@ -364,6 +358,7 @@ export default function Transactions({
           (!search ||
             [
               transaction.document,
+              transaction.requestNumber,
               transaction.assetId,
               transaction.user,
               transaction.location,
@@ -552,9 +547,9 @@ export default function Transactions({
       party: form.party,
       assets: form.assets,
       supportingDocuments: form.supportingDocuments,
-      requestNumber: generateRequestNumber(
+      requestNumber: previewRequestNumber(
           form.businessUnit,
-          form.formIssueDate,
+          today(),
           transactions,
         ),
       approverName: form.approverName,
@@ -610,9 +605,9 @@ export default function Transactions({
         formIssueDate: form.formIssueDate,
         assets: form.assets,
         supportingDocuments: form.supportingDocuments,
-        requestNumber: generateRequestNumber(
+        requestNumber: previewRequestNumber(
           form.businessUnit,
-          form.formIssueDate,
+          today(),
           transactions,
         ),
         approverName: form.approverName,
@@ -631,7 +626,7 @@ export default function Transactions({
             : "Record asset handovers, services, borrowing, and disposals."
         }
         actions={
-          <Button onClick={openCreate}>
+          <Button disabled={!createAllowed} onClick={openCreate}>
             <Plus size={16} /> New Goods-{incoming ? "In" : "Out"}
           </Button>
         }
@@ -711,6 +706,7 @@ export default function Transactions({
               <tr>
                 <th>Date</th>
                 <th>Document Number</th>
+                <th>Request Number</th>
                 <th>Total Assets</th>
                 <th>{incoming ? "Goods In Type" : "Goods Out Type"}</th>
                 <th>{incoming ? "Source / User" : "Recipient / User"}</th>
@@ -731,6 +727,9 @@ export default function Transactions({
                   </td>
                   <td>
                     <strong>{transaction.document}</strong>
+                  </td>
+                  <td>
+                    <code>{transaction.requestNumber || "—"}</code>
                   </td>
                   <td className="numeric">{totalAssets(transaction)}</td>
                   <td>{transaction.type}</td>
@@ -1120,10 +1119,16 @@ export default function Transactions({
                   value={form.party.name}
                   readOnly
                 />
-                <Input
-                  label="Business Unit"
+                <Select
+                  label="Business Unit *"
                   value={form.businessUnit}
-                  readOnly
+                  onChange={(event) =>
+                    setFormValue("businessUnit", event.target.value)
+                  }
+                  options={[
+                    { value: "", label: "Select business unit" },
+                    ...businessUnits,
+                  ]}
                 />
                 <Select
                   label={
@@ -1142,9 +1147,9 @@ export default function Transactions({
                 />
                 <Input
                   label="Request Number"
-                  value={generateRequestNumber(
+                  value={previewRequestNumber(
                     form.businessUnit,
-                    form.formIssueDate,
+                    today(),
                     transactions,
                   )}
                   readOnly
@@ -1235,34 +1240,36 @@ export default function Transactions({
               assets={assets}
             />
 
-            <section className="detail-section status-management">
-              <h3>Status Management</h3>
-              <div className="status-control">
-                <div>
-                  <span>Current Status</span>
-                  <Badge>{selectedTransaction.status}</Badge>
+            {manageAllowed && (
+              <section className="detail-section status-management">
+                <h3>Status Management</h3>
+                <div className="status-control">
+                  <div>
+                    <span>Current Status</span>
+                    <Badge>{selectedTransaction.status}</Badge>
+                  </div>
+                  <Select
+                    label="Change Status"
+                    value={nextStatus}
+                    onChange={(event) =>
+                      setNextStatus(event.target.value as TransactionStatus)
+                    }
+                    options={statuses}
+                  />
+                  <Input
+                    label="Notes (optional)"
+                    value={statusNotes}
+                    onChange={(event) => setStatusNotes(event.target.value)}
+                  />
+                  <Button
+                    disabled={nextStatus === selectedTransaction.status}
+                    onClick={saveStatus}
+                  >
+                    Save status
+                  </Button>
                 </div>
-                <Select
-                  label="Change Status"
-                  value={nextStatus}
-                  onChange={(event) =>
-                    setNextStatus(event.target.value as TransactionStatus)
-                  }
-                  options={statuses}
-                />
-                <Input
-                  label="Notes (optional)"
-                  value={statusNotes}
-                  onChange={(event) => setStatusNotes(event.target.value)}
-                />
-                <Button
-                  disabled={nextStatus === selectedTransaction.status}
-                  onClick={saveStatus}
-                >
-                  Save status
-                </Button>
-              </div>
-            </section>
+              </section>
+            )}
 
             <section className="detail-section">
               <h3>Status History</h3>
