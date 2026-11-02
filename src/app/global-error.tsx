@@ -1,6 +1,7 @@
 "use client"
 
 import { Button } from "@/components/ui"
+import { logoutAccount } from "@/auth/client"
 
 export default function GlobalError({
   error,
@@ -10,7 +11,7 @@ export default function GlobalError({
   reset: () => void
 }) {
   const signOut = async () => {
-    await fetch("/app-api/auth/logout", { method: "POST" })
+    await logoutAccount()
     window.location.assign("/login")
   }
 
