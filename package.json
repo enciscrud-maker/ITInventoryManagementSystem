@@ -4,13 +4,13 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "NODE_OPTIONS=--no-deprecation next dev --port ${PORT:-3000} --hostname 0.0.0.0",
-    "build": "NODE_ENV=production NODE_OPTIONS=--no-deprecation payload build",
-    "start": "NODE_OPTIONS=--no-deprecation next start",
+    "dev": "next dev --hostname 0.0.0.0",
+    "build": "payload build",
+    "start": "next start",
     "format": "oxfmt",
-    "generate:importmap": "NODE_OPTIONS=--no-deprecation payload generate:importmap",
-    "generate:types": "NODE_OPTIONS=--no-deprecation payload generate:types",
-    "payload": "NODE_OPTIONS=--no-deprecation payload"
+    "generate:importmap": "payload generate:importmap",
+    "generate:types": "payload generate:types",
+    "payload": "payload"
   },
   "dependencies": {
     "@payloadcms/figma": "1.0.0-beta.1",
@@ -26,7 +26,7 @@
     "jsqr": "^1.4.0",
     "lucide-react": "^0.468.0",
     "monaco-editor": "0.55.1",
-    "next": "16.4.0",
+    "next": "16.4.3",
     "payload": "4.0.0-beta.3",
     "react": "19.2.1",
     "react-dom": "19.2.1",
@@ -47,12 +47,5 @@
   "engines": {
     "node": ">=20.9.0",
     "pnpm": "^9 || ^10"
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": [
-      "sharp",
-      "esbuild",
-      "unrs-resolver"
-    ]
   }
 }

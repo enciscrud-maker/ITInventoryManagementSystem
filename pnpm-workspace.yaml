@@ -9,3 +9,14 @@ supportedArchitectures:
   libc:
     - current
     - glibc
+allowBuilds:
+  sharp: true
+  esbuild: true
+  unrs-resolver: true
+  core-js: false
+onlyBuiltDependencies:
+  - sharp
+  - esbuild
+  - unrs-resolver
+ignoredBuiltDependencies:
+  - core-js
