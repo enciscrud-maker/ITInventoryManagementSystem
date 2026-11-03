@@ -108,13 +108,13 @@ async function createBackendMasterRecord(
 ): Promise<ApiResult<unknown>> {
   const active = draft.active !== false
   const name = draft.name.trim()
-  const code = draft.id.trim()
+  const id = draft.id.trim()
 
   if (key === "categories") {
     return categoriesApi.create({
       catName: name,
-      catCode: code,
-      catPrefix: code,
+      catCode: (draft.category_id ?? id).trim(),
+      catPrefix: (draft.category_code ?? draft.code).trim(),
       isActive: active,
     })
   }
@@ -124,8 +124,8 @@ async function createBackendMasterRecord(
     return assetGroupsApi.create({
       catId,
       groupName: name,
-      groupCode: code,
-      groupPrefix: draft.group_code ?? code,
+      groupCode: (draft.group_id ?? id).trim(),
+      groupPrefix: (draft.group_code ?? draft.code).trim(),
       isActive: active,
     })
   }
@@ -137,8 +137,8 @@ async function createBackendMasterRecord(
       groupId,
       catId,
       typeName: name,
-      typeCode: code,
-      typePrefix: draft.type_code ?? code,
+      typeCode: (draft.type_id ?? id).trim(),
+      typePrefix: (draft.type_code ?? draft.code).trim(),
       isActive: active,
     })
   }
@@ -148,8 +148,8 @@ async function createBackendMasterRecord(
     return brandsApi.create({
       typeId,
       brandName: name,
-      brandCode: code,
-      brandPrefix: draft.brand_code ?? code,
+      brandCode: (draft.brand_id ?? id).trim(),
+      brandPrefix: (draft.brand_code ?? draft.code).trim(),
       isActive: active,
     })
   }
@@ -165,7 +165,7 @@ async function createBackendMasterRecord(
       groupId,
       typeId,
       modelName: name,
-      modelCode: draft.model_code ?? code,
+      modelCode: draft.model_code ?? id,
       isActive: active,
     })
   }
@@ -218,7 +218,13 @@ export default function MasterData() {
   const rows = useMemo(() => {
     const query = search.trim().toLowerCase()
     return master[key].filter((item) => {
-      const matchesSearch = Object.values(item)
+      const matchesSearch = [
+        item.display_id ?? item[idField[key]],
+        item.name,
+        item.prefix,
+        item.code,
+      ]
+        .filter(Boolean)
         .join(" ")
         .toLowerCase()
         .includes(query)
@@ -492,7 +498,7 @@ export default function MasterData() {
             setSearch(event.target.value)
             setPage(1)
           }}
-          placeholder={`Search ${tab.toLowerCase()}...`}
+          placeholder={`Search ${tab.toLowerCase()} by ID, name, or code...`}
         />
         {key === "groups" && (
           <Select
@@ -953,9 +959,13 @@ function CategoryTable({
         {rows.map((item, index) => (
           <tr key={item.id}>
             <td className="numeric">{(page - 1) * pageSize + index + 1}</td>
-            <CodeCell value={item.category_id ?? item.id} />
+            <CodeCell
+              value={item.display_id ?? item.category_id ?? item.id}
+            />
             <NameCell value={item.name} />
-            <CodeCell value={item.category_code ?? item.code} />
+            <CodeCell
+              value={item.prefix ?? item.category_code ?? item.code}
+            />
             <ActionCell
               item={item}
               allowEdit={allowEdit}
@@ -969,11 +979,19 @@ function CategoryTable({
   )
 }
 
-function GroupTable({ rows, allowEdit, onEdit, onDelete }: TableProps) {
+function GroupTable({
+  rows,
+  page,
+  pageSize,
+  allowEdit,
+  onEdit,
+  onDelete,
+}: TableProps) {
   return (
     <table>
       <thead>
         <tr>
+          <th>No.</th>
           <th>Group ID</th>
           <th>Group Name</th>
           <th>Group Code</th>
@@ -984,14 +1002,15 @@ function GroupTable({ rows, allowEdit, onEdit, onDelete }: TableProps) {
         </tr>
       </thead>
       <tbody>
-        {rows.map((item) => (
+        {rows.map((item, index) => (
           <tr key={item.id}>
-            <CodeCell value={item.group_id ?? item.id} />
+            <NumberCell page={page} pageSize={pageSize} index={index} />
+            <CodeCell value={item.display_id ?? item.group_id ?? item.id} />
             <NameCell value={item.name} />
-            <CodeCell value={item.group_code ?? item.code} />
-            <CodeCell value={item.category_id} />
+            <CodeCell value={item.prefix ?? item.group_code ?? item.code} />
+            <CodeCell value={item.category_display_id ?? item.category_id} />
             <TextCell value={item.category_name} />
-            <CodeCell value={item.category_code} />
+            <CodeCell value={item.category_prefix ?? item.category_code} />
             <ActionCell
               item={item}
               allowEdit={allowEdit}
@@ -1005,11 +1024,19 @@ function GroupTable({ rows, allowEdit, onEdit, onDelete }: TableProps) {
   )
 }
 
-function TypeTable({ rows, allowEdit, onEdit, onDelete }: TableProps) {
+function TypeTable({
+  rows,
+  page,
+  pageSize,
+  allowEdit,
+  onEdit,
+  onDelete,
+}: TableProps) {
   return (
     <table>
       <thead>
         <tr>
+          <th>No.</th>
           <th>ID Type</th>
           <th>Nama Type</th>
           <th>Code Type</th>
@@ -1019,11 +1046,12 @@ function TypeTable({ rows, allowEdit, onEdit, onDelete }: TableProps) {
         </tr>
       </thead>
       <tbody>
-        {rows.map((item) => (
+        {rows.map((item, index) => (
           <tr key={item.id}>
-            <CodeCell value={item.type_id ?? item.id} />
+            <NumberCell page={page} pageSize={pageSize} index={index} />
+            <CodeCell value={item.display_id ?? item.type_id ?? item.id} />
             <NameCell value={item.name} />
-            <CodeCell value={item.type_code ?? item.code} />
+            <CodeCell value={item.prefix ?? item.type_code ?? item.code} />
             <TextCell value={item.group_name} />
             <TextCell value={item.category_name} />
             <ActionCell
@@ -1039,11 +1067,19 @@ function TypeTable({ rows, allowEdit, onEdit, onDelete }: TableProps) {
   )
 }
 
-function BrandTable({ rows, allowEdit, onEdit, onDelete }: TableProps) {
+function BrandTable({
+  rows,
+  page,
+  pageSize,
+  allowEdit,
+  onEdit,
+  onDelete,
+}: TableProps) {
   return (
     <table>
       <thead>
         <tr>
+          <th>No.</th>
           <th>Brand ID</th>
           <th>Brand Name</th>
           <th>Brand Code</th>
@@ -1052,12 +1088,13 @@ function BrandTable({ rows, allowEdit, onEdit, onDelete }: TableProps) {
         </tr>
       </thead>
       <tbody>
-        {rows.map((item) => (
+        {rows.map((item, index) => (
           <tr key={item.id}>
-            <CodeCell value={item.brand_id ?? item.id} />
+            <NumberCell page={page} pageSize={pageSize} index={index} />
+            <CodeCell value={item.display_id ?? item.brand_id ?? item.id} />
             <NameCell value={item.name} />
-            <CodeCell value={item.brand_code ?? item.code} />
-            <CodeCell value={item.type_id} />
+            <CodeCell value={item.prefix ?? item.brand_code ?? item.code} />
+            <CodeCell value={item.type_display_id ?? item.type_id} />
             <ActionCell
               item={item}
               allowEdit={allowEdit}
@@ -1071,11 +1108,19 @@ function BrandTable({ rows, allowEdit, onEdit, onDelete }: TableProps) {
   )
 }
 
-function ModelTable({ rows, allowEdit, onEdit, onDelete }: TableProps) {
+function ModelTable({
+  rows,
+  page,
+  pageSize,
+  allowEdit,
+  onEdit,
+  onDelete,
+}: TableProps) {
   return (
     <table>
       <thead>
         <tr>
+          <th>No.</th>
           <th>Model ID</th>
           <th>Nama Model / Spesifikasi</th>
           <th>Brand</th>
@@ -1087,9 +1132,12 @@ function ModelTable({ rows, allowEdit, onEdit, onDelete }: TableProps) {
         </tr>
       </thead>
       <tbody>
-        {rows.map((item) => (
+        {rows.map((item, index) => (
           <tr key={item.id}>
-            <CodeCell value={item.model_id ?? item.id} />
+            <NumberCell page={page} pageSize={pageSize} index={index} />
+            <CodeCell
+              value={item.display_id ?? item.model_id ?? item.id}
+            />
             <NameCell value={item.name} />
             <TextCell value={item.brand_name} />
             <TextCell value={item.type_name} />
@@ -1112,6 +1160,8 @@ function ModelTable({ rows, allowEdit, onEdit, onDelete }: TableProps) {
 function LocationTable({
   rows,
   assets,
+  page,
+  pageSize,
   allowEdit,
   onEdit,
   onDelete,
@@ -1120,6 +1170,7 @@ function LocationTable({
     <table>
       <thead>
         <tr>
+          <th>No.</th>
           <th>Lokasi</th>
           <th>Kode Lokasi</th>
           <th>Nama</th>
@@ -1130,12 +1181,13 @@ function LocationTable({
         </tr>
       </thead>
       <tbody>
-        {rows.map((item) => {
+        {rows.map((item, index) => {
           const asset = assets.find(
             (candidate) => candidate.location === item.name,
           )
           return (
             <tr key={item.id}>
+              <NumberCell page={page} pageSize={pageSize} index={index} />
               <NameCell value={item.location_name ?? item.name} />
               <CodeCell value={item.location_code ?? item.code} />
               <TextCell value={item.business_unit ?? asset?.businessUnit} />
@@ -1159,6 +1211,8 @@ function LocationTable({
 function ConditionTable({
   rows,
   assets,
+  page,
+  pageSize,
   allowEdit,
   onEdit,
   onDelete,
@@ -1167,6 +1221,7 @@ function ConditionTable({
     <table>
       <thead>
         <tr>
+          <th>No.</th>
           <th>Kondisi</th>
           <th>Status Code</th>
           <th>Nama Model</th>
@@ -1177,12 +1232,13 @@ function ConditionTable({
         </tr>
       </thead>
       <tbody>
-        {rows.map((item) => {
+        {rows.map((item, index) => {
           const asset = assets.find(
             (candidate) => candidate.condition === item.name,
           )
           return (
             <tr key={item.id}>
+              <NumberCell page={page} pageSize={pageSize} index={index} />
               <NameCell value={item.condition_name ?? item.name} />
               <CodeCell value={item.status_code ?? item.code} />
               <TextCell value={item.model_name ?? asset?.model} />
@@ -1201,6 +1257,18 @@ function ConditionTable({
       </tbody>
     </table>
   )
+}
+
+function NumberCell({
+  page,
+  pageSize,
+  index,
+}: {
+  page: number
+  pageSize: number
+  index: number
+}) {
+  return <td className="numeric">{(page - 1) * pageSize + index + 1}</td>
 }
 
 function TextCell({ value }: { value?: string }) {

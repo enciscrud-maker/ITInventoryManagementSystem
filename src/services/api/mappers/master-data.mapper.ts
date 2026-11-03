@@ -10,10 +10,13 @@ export function toMasterItems(data: MasterDataSnapshot) {
     id: String(category.catId),
     name: category.catName ?? "",
     code: category.catCode ?? category.catPrefix ?? "",
+    display_id: category.catCode ?? undefined,
+    prefix: category.catPrefix ?? undefined,
     active: category.isActive,
     category_id: String(category.catId),
     category_name: category.catName ?? "",
     category_code: category.catCode ?? category.catPrefix ?? "",
+    category_prefix: category.catPrefix ?? undefined,
   }))
   const categoryById = new Map(
     categories.map((category) => [category.category_id, category]),
@@ -25,14 +28,19 @@ export function toMasterItems(data: MasterDataSnapshot) {
       id: String(group.groupId),
       name: group.groupName ?? "",
       code: group.groupCode ?? group.groupPrefix ?? "",
+      display_id: group.groupCode ?? undefined,
+      prefix: group.groupPrefix ?? undefined,
       active: group.isActive,
       parent: category?.name ?? "",
       group_id: String(group.groupId),
       group_name: group.groupName ?? "",
       group_code: group.groupCode ?? group.groupPrefix ?? "",
+      group_prefix: group.groupPrefix ?? undefined,
       category_id: relationId(group.catId),
+      category_display_id: category?.display_id ?? category?.category_id,
       category_name: category?.name ?? "",
       category_code: category?.code ?? "",
+      category_prefix: category?.prefix,
     }
   })
   const groupById = new Map(groups.map((group) => [group.group_id, group]))
@@ -46,6 +54,8 @@ export function toMasterItems(data: MasterDataSnapshot) {
       id: String(type.typeId),
       name: type.typeName ?? "",
       code: type.typeCode ?? type.typePrefix ?? "",
+      display_id: type.typeCode ?? undefined,
+      prefix: type.typePrefix ?? undefined,
       active: type.isActive,
       parent: group?.name ?? "",
       type_id: String(type.typeId),
@@ -55,6 +65,7 @@ export function toMasterItems(data: MasterDataSnapshot) {
       group_name: group?.name ?? "",
       group_code: group?.code ?? "",
       category_id: relationId(type.catId),
+      category_display_id: category?.display_id ?? category?.category_id,
       category_name: category?.name ?? "",
       category_code: category?.code ?? "",
     }
@@ -67,6 +78,8 @@ export function toMasterItems(data: MasterDataSnapshot) {
       id: String(brand.brandId),
       name: brand.brandName ?? "",
       code: brand.brandCode ?? brand.brandPrefix ?? "",
+      display_id: brand.brandCode ?? undefined,
+      prefix: brand.brandPrefix ?? undefined,
       active: brand.isActive,
       parent: type?.name ?? "",
       brand_id: String(brand.brandId),
@@ -74,6 +87,7 @@ export function toMasterItems(data: MasterDataSnapshot) {
       brand_code: brand.brandCode ?? brand.brandPrefix ?? "",
       type_id: relationId(brand.typeId),
       type_name: type?.name ?? "",
+      type_display_id: type?.display_id ?? type?.type_id,
     }
   })
   const brandById = new Map(brands.map((brand) => [brand.brand_id, brand]))
@@ -87,6 +101,7 @@ export function toMasterItems(data: MasterDataSnapshot) {
       id: String(model.modelId),
       name: model.modelName ?? "",
       code: model.modelCode ?? "",
+      display_id: model.modelCode || undefined,
       active: model.isActive,
       parent: brand?.name ?? "",
       model_id: String(model.modelId),

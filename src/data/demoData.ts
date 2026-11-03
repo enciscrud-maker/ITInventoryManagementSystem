@@ -153,17 +153,23 @@ export type MasterItem = {
   id: string
   name: string
   code: string
+  display_id?: string
+  prefix?: string
   parent?: string
   active?: boolean
   category_id?: string
+  category_display_id?: string
   category_name?: string
   category_code?: string
+  category_prefix?: string
   group_id?: string
   group_name?: string
   group_code?: string
+  group_prefix?: string
   type_id?: string
   type_name?: string
   type_code?: string
+  type_display_id?: string
   brand_id?: string
   brand_name?: string
   brand_code?: string
