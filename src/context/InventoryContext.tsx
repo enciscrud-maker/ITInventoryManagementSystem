@@ -49,10 +49,14 @@ import {
   migrateMasterData,
   normalizeBusinessUnitLocation,
   normalizeAssetClassification,
+  defaultConditionTagColor,
+  generateStatusCode,
+  isValidTagColor,
   reserveDeletedBusinessUnit,
   reserveDeletedLocation,
   reserveMasterId,
   resolveCategoryById,
+  serializeMasterData,
 } from "../utils/masterData"
 import { useAuth } from "../auth/AuthContext"
 import {
@@ -129,7 +133,7 @@ type State = {
   setSelectedAsset: (v: Asset | null) => void
   notify: (v: string) => void
   importAssets: (v: Asset[]) => void
-  saveMaster: (key: string, item: MasterItem) => void
+  saveMaster: (key: string, item: MasterItem) => boolean
   deleteMaster: (key: string, id: string) => boolean
   saveBusinessUnit: (name: string, id?: string) => boolean
   saveLocation: (name: string, businessUnitId: string, id?: string) => boolean
@@ -150,6 +154,14 @@ const read = <T,>(key: string, fallback: T): T => {
 const normalizeTransaction = (transaction: Transaction): Transaction => {
   const status: TransactionStatus =
     transaction.status === "Completed" ? "Completed" : "In Progress"
+  const masterStatus =
+    demoMaster.statuses.find(
+      (item) =>
+        item.usage === transaction.direction &&
+        (item.id === transaction.statusId ||
+          item.name.toLocaleLowerCase() ===
+            transaction.type.toLocaleLowerCase()),
+    )
   const assetRows: TransactionAssetItem[] = transaction.assets?.length
     ? transaction.assets
     : [
@@ -167,6 +179,8 @@ const normalizeTransaction = (transaction: Transaction): Transaction => {
   return {
     ...transaction,
     status,
+    statusId: transaction.statusId ?? masterStatus?.id,
+    statusCode: transaction.statusCode ?? masterStatus?.code,
     assets: assetRows,
     party: transaction.party ?? {
       name: transaction.user,
@@ -200,6 +214,14 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       assets,
       transactions,
       audits,
+      conditionNames: [
+        ...assets.map((asset) => asset.condition),
+        ...transactions.flatMap((transaction) =>
+          (transaction.assets ?? []).flatMap((row) =>
+            row.condition ? [row.condition] : [],
+          ),
+        ),
+      ],
     }),
   )
   const [businessUnit, setBusinessUnit] = useState(() => {
@@ -241,7 +263,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     }
   }, [audits])
   useEffect(() => {
-    localStorage.setItem("iti-master", JSON.stringify(master))
+    localStorage.setItem("iti-master", JSON.stringify(serializeMasterData(master)))
   }, [master])
   useEffect(() => {
     setAssets((current) =>
@@ -259,12 +281,37 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     setTransactions((current) =>
       current.map((transaction) => {
         const normalized = normalizeBusinessUnitLocation(transaction, master)
+        const status =
+          master.statuses.find(
+            (item) =>
+              item.id === transaction.statusId &&
+              item.usage === transaction.direction,
+          ) ??
+          master.statuses.find(
+            (item) =>
+              item.usage === transaction.direction &&
+              item.name.toLocaleLowerCase() ===
+                transaction.type.toLocaleLowerCase(),
+          )
         return normalized.businessUnitId === transaction.businessUnitId &&
           normalized.locationId === transaction.locationId &&
           normalized.businessUnit === transaction.businessUnit &&
-          normalized.location === transaction.location
+          normalized.location === transaction.location &&
+          (!status ||
+            (transaction.statusId === status.id &&
+              transaction.statusCode === status.code &&
+              transaction.type === status.name))
           ? transaction
-          : normalized
+          : {
+              ...normalized,
+              ...(status
+                ? {
+                    statusId: status.id,
+                    statusCode: status.code,
+                    type: status.name,
+                  }
+                : {}),
+            }
       }),
     )
     setAudits((current) =>
@@ -374,6 +421,10 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     }
   }, [refreshMasterData])
   const saveAsset = (asset: Asset) => {
+    if (!master.conditions.some((item) => item.name === asset.condition)) {
+      notify("Select a valid Condition from Master Data")
+      return
+    }
     const businessUnit = master.businessUnits.find(
       (unit) => unit.id === asset.businessUnitId,
     )
@@ -446,6 +497,17 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       notify(`You do not have permission to create Goods ${transaction.direction}`)
       return false
     }
+    const masterStatus = master.statuses.find(
+      (item) =>
+        item.id === transaction.statusId &&
+        item.usage === transaction.direction &&
+        item.name === transaction.type &&
+        item.code === transaction.statusCode,
+    )
+    if (!masterStatus) {
+      notify("Select a valid Status for this Goods-In or Goods-Out transaction")
+      return false
+    }
     if (
       transactions.some(
         (existing) =>
@@ -496,6 +558,10 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
           !asset ||
           !Number.isInteger(row.quantity) ||
           row.quantity < 1 ||
+          (tx.direction === "In" &&
+            !master.conditions.some(
+              (condition) => condition.name === row.condition,
+            )) ||
           (tx.direction === "Out" && row.quantity > asset.quantity)
         )
       })
@@ -1049,13 +1115,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
   }
   const saveMaster = (key: string, item: MasterItem) => {
     const existingRecord = master[key]?.some(
-      (candidate) =>
-        candidate.id === item.id ||
-        candidate.category_id === item.category_id ||
-        candidate.group_id === item.group_id ||
-        candidate.type_id === item.type_id ||
-        candidate.brand_id === item.brand_id ||
-        candidate.model_id === item.model_id,
+      (candidate) => candidate.id === item.id,
     )
     if (
       existingRecord
@@ -1063,7 +1123,118 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         : !canCreateInModule(currentUser, "master-data")
     ) {
       notify("You do not have permission to save this master record")
-      return
+      return false
+    }
+    if (key === "conditions" || key === "statuses") {
+      const records = master[key]
+      const existing = records.find((candidate) => candidate.id === item.id)
+      const name = item.name.trim()
+      if (!name) {
+        notify(`${key === "conditions" ? "Condition" : "Status"} name is required`)
+        return false
+      }
+
+      let normalized: MasterItem
+      if (key === "conditions") {
+        if (existing && existing.name !== name) {
+          notify("Condition names cannot be changed after creation")
+          return false
+        }
+        if (
+          records.some(
+            (candidate) =>
+              candidate.id !== existing?.id &&
+              candidate.name.trim().toLocaleLowerCase() === name.toLocaleLowerCase(),
+          )
+        ) {
+          notify("Condition name already exists")
+          return false
+        }
+        if (!isValidTagColor(item.tagColor ?? "")) {
+          notify("Choose a valid Condition tag color")
+          return false
+        }
+        normalized = {
+          id: existing?.id ?? item.id,
+          name: existing?.name ?? name,
+          code: "",
+          tagColor: item.tagColor,
+        }
+      } else {
+        const usage = item.usage
+        if (usage !== "In" && usage !== "Out") {
+          notify("Choose a valid Status usage direction")
+          return false
+        }
+        const code = generateStatusCode(name, usage)
+        if (!code) {
+          notify("Status name must contain at least one supported character")
+          return false
+        }
+        if (
+          records.some(
+            (candidate) =>
+              candidate.id !== existing?.id && candidate.code === code,
+          )
+        ) {
+          notify("Status code already exists")
+          return false
+        }
+        if (
+          existing &&
+          usage !== existing.usage &&
+          transactions.some(
+            (transaction) =>
+              transaction.statusId === existing.id &&
+              transaction.direction !== usage,
+          )
+        ) {
+          notify("Usage cannot change while this Status is referenced by transactions in the other direction")
+          return false
+        }
+        normalized = { id: existing?.id ?? item.id, name, usage, code }
+      }
+
+      reserveMasterId(normalized.id)
+      setMaster((value) => ({
+        ...value,
+        [key]: existing
+          ? value[key].map((candidate) =>
+              candidate.id === existing.id ? normalized : candidate,
+            )
+          : [normalized, ...value[key]],
+      }))
+      if (key === "statuses" && existing) {
+        setTransactions((value) =>
+          value.map((transaction) =>
+            transaction.statusId === existing.id
+              ? {
+                  ...transaction,
+                  type: normalized.name,
+                  statusCode: normalized.code,
+                }
+              : transaction,
+          ),
+        )
+      }
+      const changes = existing
+        ? summarizeChanges(
+            existing as unknown as Record<string, unknown>,
+            normalized as unknown as Record<string, unknown>,
+          )
+        : undefined
+      if (!existing || Object.keys(changes ?? {}).length) {
+        recordDataActivity({
+          actor: currentUser,
+          module: key === "conditions" ? "Condition" : "Status",
+          action: existing ? "Update" : "Create",
+          recordId: normalized.id,
+          recordLabel: normalized.name,
+          changes,
+        })
+      }
+      notify(`${key === "conditions" ? "Condition" : "Status"} saved`)
+      return true
     }
     if (key === "categories") {
       const categoryId = item.category_id ?? item.id
@@ -1124,7 +1295,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         })
       }
       notify("Category saved successfully")
-      return
+      return true
     }
     if (key === "groups") {
       const groupId = item.group_id ?? item.id
@@ -1137,7 +1308,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       )
       if (!category) {
         notify("Cannot save Group: select a valid Category")
-        return
+        return false
       }
       const normalized = createGroupRecord(
         groupId,
@@ -1193,7 +1364,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         })
       }
       notify("Group saved successfully")
-      return
+      return true
     }
     const existing = master[key].find((candidate) => candidate.id === item.id)
     reserveMasterId(item.id)
@@ -1295,6 +1466,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       })
     }
     notify("Master data saved")
+    return true
   }
   const saveBusinessUnit = (nameValue: string, id?: string) => {
     const name = nameValue.trim()
@@ -1605,6 +1777,33 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         candidate.group_id === id,
     )
     if (!item) return false
+    const conditionInUse =
+      key === "conditions" &&
+      (assets.some(
+        (asset) =>
+          asset.condition.trim().toLocaleLowerCase() ===
+          item.name.trim().toLocaleLowerCase(),
+      ) ||
+        transactions.some((transaction) =>
+          transaction.assets?.some(
+            (row) =>
+              row.condition?.trim().toLocaleLowerCase() ===
+              item.name.trim().toLocaleLowerCase(),
+          ),
+        ) ||
+        Object.values(master)
+          .flat()
+          .some((candidate) => candidate.condition_id === item.id))
+    const statusInUse =
+      key === "statuses" &&
+      transactions.some(
+        (transaction) =>
+          transaction.statusId === item.id ||
+          (!transaction.statusId &&
+            transaction.direction === item.usage &&
+            transaction.type.trim().toLocaleLowerCase() ===
+              item.name.trim().toLocaleLowerCase()),
+      )
     const categoryInUse =
       key === "categories" &&
       master.groups.some((group) => group.category_id === item.category_id)
@@ -1612,19 +1811,29 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       key === "groups" &&
       (master.types.some((type) => type.parent === item.name) ||
         assets.some((asset) => asset.group === item.name))
+    const genericMasterUse =
+      key !== "conditions" &&
+      key !== "statuses" &&
+      (assets.some((a) => Object.values(a).includes(item.name)) ||
+        Object.values(master)
+          .flat()
+          .some((x) => x.parent === item.name))
     const used =
+      conditionInUse ||
+      statusInUse ||
       categoryInUse ||
       groupInUse ||
-      assets.some((a) => Object.values(a).includes(item.name)) ||
-      Object.values(master)
-        .flat()
-        .some((x) => x.parent === item.name)
+      genericMasterUse
     if (used) {
       notify(
         key === "categories"
           ? "Cannot delete Category: reassign its Groups and Assets first"
           : key === "groups"
             ? "Cannot delete Group: reassign its Types and Assets first"
+            : key === "conditions"
+              ? "Cannot delete Condition: it is still referenced by assets or transactions"
+              : key === "statuses"
+                ? "Cannot delete Status: it is still referenced by transactions"
             : "Cannot delete: record is still referenced",
       )
       return false
@@ -1646,7 +1855,11 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
           ? "Category"
           : key === "groups"
             ? "Group"
-            : "Master Data",
+            : key === "conditions"
+              ? "Condition"
+              : key === "statuses"
+                ? "Status"
+                : "Master Data",
       action: "Delete",
       recordId: item.id,
       recordLabel: item.name,

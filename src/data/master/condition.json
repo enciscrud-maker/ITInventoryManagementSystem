@@ -1,0 +1,17 @@
+[
+  {
+    "id": "s0001",
+    "condition": "Good",
+    "tagColor": "#16a34a"
+  },
+  {
+    "id": "s0002",
+    "condition": "Damaged",
+    "tagColor": "#dc2626"
+  },
+  {
+    "id": "s0003",
+    "condition": "Disposal",
+    "tagColor": "#64748b"
+  }
+]

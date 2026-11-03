@@ -17,10 +17,12 @@ import type {
   TransactionAttachment,
   TransactionParty,
   TransactionStatus,
+  MasterItem,
 } from "@/data/demoData"
 import { formatDate, today } from "@/utils/helpers"
 import { previewRequestNumber } from "@/utils/requestNumber"
 import { getLocationsForBusinessUnit } from "@/utils/masterData"
+import ConditionBadge from "@/components/ConditionBadge"
 import { useAuth } from "@/auth/AuthContext"
 import {
   canCreateInModule,
@@ -41,15 +43,7 @@ import {
   Textarea,
 } from "@/components/ui"
 
-const statuses: TransactionStatus[] = ["In Progress", "Completed"]
-const goodsInTypes = ["Return", "New Unit", "After Service"]
-const goodsOutTypes = [
-  "Borrowing",
-  "Service",
-  "Disposal",
-  "Off Lease",
-  "Handover",
-]
+const transactionStatuses: TransactionStatus[] = ["In Progress", "Completed"]
 const destinationOptions = [
   "External Service Provider",
   "Employee / Borrower",
@@ -65,6 +59,8 @@ type TransactionForm = {
   formIssueDate: string
   party: TransactionParty
   type: string
+  statusId: string
+  statusCode: string
   assets: TransactionAssetItem[]
   location: string
   locationId: string
@@ -161,9 +157,11 @@ function SummaryField({
 function TransactionSummary({
   transaction,
   assets,
+  conditions,
 }: {
   transaction: Transaction
   assets: Asset[]
+  conditions: MasterItem[]
 }) {
   const party = transactionParty(transaction)
   const rows = transactionAssets(transaction)
@@ -192,7 +190,12 @@ function TransactionSummary({
           <SummaryField label="NIK">{party.nik}</SummaryField>
           <SummaryField label="Department">{party.department}</SummaryField>
           <SummaryField label={incoming ? "Goods In Type" : "Goods Out Type"}>
-            {transaction.type}
+            <>
+              {transaction.type}
+              {transaction.statusCode && (
+                <small className="table-subline">{transaction.statusCode}</small>
+              )}
+            </>
           </SummaryField>
         </dl>
       </section>
@@ -243,7 +246,20 @@ function TransactionSummary({
                         <td>{row.serialNumber || "—"}</td>
                         <td>{row.referenceNumber || "—"}</td>
                         <td>{row.assetInformation || "—"}</td>
-                        <td>{row.condition || "—"}</td>
+                        <td>
+                          {row.condition ? (
+                            <ConditionBadge
+                              condition={row.condition}
+                              color={
+                                conditions.find(
+                                  (item) => item.name === row.condition,
+                                )?.tagColor
+                              }
+                            />
+                          ) : (
+                            "—"
+                          )}
+                        </td>
                         <td>{row.remarks || "—"}</td>
                       </>
                     ) : (
@@ -333,7 +349,8 @@ export default function Transactions({
   )
   const manageAllowed = canManageExisting(currentUser)
   const incoming = direction === "In"
-  const types = incoming ? goodsInTypes : goodsOutTypes
+  const types = master.statuses.filter((item) => item.usage === direction)
+  const typeNames = types.map((item) => item.name)
   const [open, setOpen] = useState(false)
   const [step, setStep] = useState(1)
   const [search, setSearch] = useState("")
@@ -403,7 +420,9 @@ export default function Transactions({
       requestDate: today(),
       formIssueDate: today(),
       party: { name: "", nik: "", department: "" },
-      type: types[0],
+      type: types[0]?.name ?? "",
+      statusId: types[0]?.id ?? "",
+      statusCode: types[0]?.code ?? "",
       assets: [emptyAssetRow()],
       location: "",
       locationId: "",
@@ -508,7 +527,12 @@ export default function Transactions({
         !form.party.name.trim() ||
         !form.party.nik.trim() ||
         !form.party.department.trim() ||
-        !form.type
+        !master.statuses.some(
+          (item) =>
+            item.id === form.statusId &&
+            item.usage === direction &&
+            item.name === form.type,
+        )
       )
         return "Complete all required Detail Input fields."
     }
@@ -574,6 +598,8 @@ export default function Transactions({
       document: form.document,
       assetId: firstAsset.assetId,
       type: form.type,
+      statusId: form.statusId,
+      statusCode: form.statusCode,
       quantity,
       location: form.location,
       locationId: form.locationId || undefined,
@@ -636,6 +662,8 @@ export default function Transactions({
         document: form.document,
         assetId: form.assets[0]?.assetId ?? "",
         type: form.type,
+        statusId: form.statusId,
+        statusCode: form.statusCode,
         quantity: form.assets.reduce((sum, row) => sum + row.quantity, 0),
         location: form.location,
         businessUnit: form.businessUnit,
@@ -727,7 +755,7 @@ export default function Transactions({
             setTypeFilter(event.target.value)
             setPage(1)
           }}
-          options={[{ value: "", label: "All transaction types" }, ...types]}
+          options={[{ value: "", label: "All transaction types" }, ...typeNames]}
         />
         <Select
           aria-label="Status"
@@ -736,7 +764,7 @@ export default function Transactions({
             setStatusFilter(event.target.value)
             setPage(1)
           }}
-          options={[{ value: "", label: "All statuses" }, ...statuses]}
+          options={[{ value: "", label: "All statuses" }, ...transactionStatuses]}
         />
       </div>
 
@@ -773,7 +801,14 @@ export default function Transactions({
                     <code>{transaction.requestNumber || "—"}</code>
                   </td>
                   <td className="numeric">{totalAssets(transaction)}</td>
-                  <td>{transaction.type}</td>
+                  <td>
+                    {transaction.type}
+                    {transaction.statusCode && (
+                      <small className="table-subline">
+                        {transaction.statusCode}
+                      </small>
+                    )}
+                  </td>
                   <td>{transactionParty(transaction).name}</td>
                   <td>{transaction.location || "—"}</td>
                   <td>
@@ -892,9 +927,29 @@ export default function Transactions({
                 />
                 <Select
                   label={`${incoming ? "Goods In" : "Goods Out"} Type *`}
-                  value={form.type}
-                  onChange={(event) => setFormValue("type", event.target.value)}
-                  options={types}
+                  value={form.statusId}
+                  onChange={(event) => {
+                    const selected = types.find(
+                      (item) => item.id === event.target.value,
+                    )
+                    setForm((current) =>
+                      current
+                        ? {
+                            ...current,
+                            type: selected?.name ?? "",
+                            statusId: selected?.id ?? "",
+                            statusCode: selected?.code ?? "",
+                          }
+                        : current,
+                    )
+                  }}
+                  options={[
+                    { value: "", label: "Select status" },
+                    ...types.map((item) => ({
+                      value: item.id,
+                      label: item.name,
+                    })),
+                  ]}
                 />
               </div>
             )}
@@ -1045,7 +1100,7 @@ export default function Transactions({
                                   />
                                 </td>
                                 <td>
-                                  <Input
+                                  <Select
                                     aria-label={`Condition ${index + 1}`}
                                     value={row.condition}
                                     onChange={(event) =>
@@ -1055,6 +1110,13 @@ export default function Transactions({
                                         event.target.value,
                                       )
                                     }
+                                    options={[
+                                      { value: "", label: "Select condition" },
+                                      ...master.conditions.map((item) => ({
+                                        value: item.name,
+                                        label: item.name,
+                                      })),
+                                    ]}
                                   />
                                 </td>
                                 <td>
@@ -1252,7 +1314,11 @@ export default function Transactions({
             )}
 
             {step === 4 && formPreview && (
-              <TransactionSummary transaction={formPreview} assets={assets} />
+              <TransactionSummary
+                transaction={formPreview}
+                assets={assets}
+                conditions={master.conditions}
+              />
             )}
 
             <div className="form-actions">
@@ -1290,6 +1356,7 @@ export default function Transactions({
             <TransactionSummary
               transaction={selectedTransaction}
               assets={assets}
+              conditions={master.conditions}
             />
 
             {manageAllowed && (
@@ -1306,7 +1373,7 @@ export default function Transactions({
                     onChange={(event) =>
                       setNextStatus(event.target.value as TransactionStatus)
                     }
-                    options={statuses}
+                    options={transactionStatuses}
                   />
                   <Input
                     label="Notes (optional)"

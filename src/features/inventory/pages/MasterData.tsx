@@ -19,6 +19,8 @@ import {
 import { invalidateMasterDataCache } from "@/services/api/masterDataCache"
 import type { ApiResult } from "@/lib/api/types"
 import type { Asset, MasterItem } from "@/data/demoData"
+import ConditionStatusManagement from "./ConditionStatusManagement"
+import ConditionBadge from "@/components/ConditionBadge"
 import {
   createCategoryRecord,
   createGroupRecord,
@@ -54,7 +56,7 @@ const tabs: Record<string, MasterKey> = {
   Brand: "brands",
   Model: "models",
   "Business Unit": "businessUnits",
-  "Condition / Status": "conditions",
+  "Condition & Status": "conditions",
 }
 
 const idField: Record<MasterKey, keyof MasterItem> = {
@@ -65,7 +67,8 @@ const idField: Record<MasterKey, keyof MasterItem> = {
   models: "model_id",
   businessUnits: "id",
   locations: "location_id",
-  conditions: "condition_id",
+  conditions: "id",
+  statuses: "id",
 }
 
 const entityName: Record<MasterKey, string> = {
@@ -76,7 +79,8 @@ const entityName: Record<MasterKey, string> = {
   models: "Model",
   businessUnits: "Business Unit",
   locations: "Location",
-  conditions: "Condition / Status",
+  conditions: "Condition",
+  statuses: "Status",
 }
 
 const backendMasterKeys = new Set<MasterKey>([
@@ -297,9 +301,7 @@ export default function MasterData() {
                     }
                   : {
                       ...base,
-                      condition_id: id,
-                      condition_name: "",
-                      status_code: "",
+                      tagColor: "#64748b",
                     },
     )
     setEditing(null)
@@ -399,8 +401,7 @@ export default function MasterData() {
   const handleSave = async () => {
     if (!draft || !validation.valid) return
     if (!isBackendMasterData) {
-      saveMaster(key, draft)
-      closeForm()
+      if (saveMaster(key, draft)) closeForm()
       return
     }
 
@@ -454,6 +455,15 @@ export default function MasterData() {
     setDeleting(null)
     setDeletingRemote(false)
   }
+
+  if (key === "conditions")
+    return (
+      <ConditionStatusManagement
+        tabs={Object.keys(tabs)}
+        activeTab={tab}
+        onTabChange={changeTab}
+      />
+    )
 
   if (key === "businessUnits")
     return (
@@ -546,6 +556,7 @@ export default function MasterData() {
                 masterKey={key}
                 rows={visibleRows}
                 assets={assets}
+                conditions={master.conditions}
                 page={page}
                 pageSize={pageSize}
                 allowEdit={!isBackendMasterData}
@@ -576,7 +587,7 @@ export default function MasterData() {
             : `ID ${draft?.id ?? ""} dibuat otomatis dari nomor terakhir.`
         }
         onClose={closeForm}
-        wide={key === "models" || key === "locations" || key === "conditions"}
+        wide={key === "models" || key === "locations"}
       >
         {draft && (
           <>
@@ -684,11 +695,9 @@ function MasterFormFields({
   const idLabel = `${entityName[masterKey]} ID`
   const nameLabel = `${entityName[masterKey]} Name *`
   const codeLabel =
-    masterKey === "conditions"
-      ? "Status Code *"
-      : masterKey === "locations"
-        ? "Kode Lokasi *"
-        : `${entityName[masterKey]} Code${masterKey === "models" ? "" : " *"}`
+    masterKey === "locations"
+      ? "Kode Lokasi *"
+      : `${entityName[masterKey]} Code${masterKey === "models" ? "" : " *"}`
   const changeName = (name: string) => {
     if (masterKey === "categories") {
       const next = createCategoryRecord(draft.category_id ?? draft.id, name)
@@ -705,7 +714,6 @@ function MasterFormFields({
     if (masterKey === "brands") updates.brand_name = name
     if (masterKey === "models") updates.model_name = name
     if (masterKey === "locations") updates.location_name = name
-    if (masterKey === "conditions") updates.condition_name = name
     updateDraft(updates)
   }
   const changeCode = (code: string) => {
@@ -716,7 +724,6 @@ function MasterFormFields({
     if (masterKey === "brands") updates.brand_code = next
     if (masterKey === "models") updates.model_code = next
     if (masterKey === "locations") updates.location_code = next
-    if (masterKey === "conditions") updates.status_code = next
     updateDraft(updates)
   }
 
@@ -838,7 +845,7 @@ function MasterFormFields({
         </>
       )}
 
-      {(masterKey === "locations" || masterKey === "conditions") && (
+      {masterKey === "locations" && (
         <>
           <Input
             label="Business Unit / Nama"
@@ -871,17 +878,17 @@ function MasterFormFields({
           onChange={(event) => {
             const conditionId = event.target.value
             const condition = master.conditions.find(
-              (item) => (item.condition_id ?? item.id) === conditionId,
+              (item) => item.id === conditionId,
             )
             updateDraft({
-              condition_id: condition?.condition_id ?? "",
+              condition_id: condition?.id ?? "",
               condition_name: condition?.name ?? "",
             })
           }}
           options={[
             { value: "", label: "Select condition" },
             ...master.conditions.map((item) => ({
-              value: item.condition_id ?? item.id,
+              value: item.id,
               label: `${item.name} (${item.code})`,
             })),
           ]}
@@ -919,6 +926,7 @@ type TableProps = {
   masterKey: MasterKey
   rows: MasterItem[]
   assets: Asset[]
+  conditions: MasterItem[]
   page: number
   pageSize: number
   allowEdit: boolean
@@ -933,7 +941,7 @@ function MasterTable(props: TableProps) {
   if (props.masterKey === "brands") return <BrandTable {...props} />
   if (props.masterKey === "models") return <ModelTable {...props} />
   if (props.masterKey === "locations") return <LocationTable {...props} />
-  return <ConditionTable {...props} />
+  return <EmptyState title="Use the combined Condition & Status view." />
 }
 
 function CategoryTable({
@@ -1160,8 +1168,7 @@ function ModelTable({
 function LocationTable({
   rows,
   assets,
-  page,
-  pageSize,
+  conditions,
   allowEdit,
   onEdit,
   onDelete,
@@ -1185,6 +1192,7 @@ function LocationTable({
           const asset = assets.find(
             (candidate) => candidate.location === item.name,
           )
+          const condition = item.condition_name ?? asset?.condition
           return (
             <tr key={item.id}>
               <NumberCell page={page} pageSize={pageSize} index={index} />
@@ -1193,58 +1201,20 @@ function LocationTable({
               <TextCell value={item.business_unit ?? asset?.businessUnit} />
               <TextCell value={item.model_name ?? asset?.model} />
               <TextCell value={item.brand_name ?? asset?.brand} />
-              <TextCell value={item.condition_name ?? asset?.condition} />
-              <ActionCell
-                item={item}
-                allowEdit={allowEdit}
-                onEdit={onEdit}
-                onDelete={onDelete}
-              />
-            </tr>
-          )
-        })}
-      </tbody>
-    </table>
-  )
-}
-
-function ConditionTable({
-  rows,
-  assets,
-  page,
-  pageSize,
-  allowEdit,
-  onEdit,
-  onDelete,
-}: TableProps) {
-  return (
-    <table>
-      <thead>
-        <tr>
-          <th>No.</th>
-          <th>Kondisi</th>
-          <th>Status Code</th>
-          <th>Nama Model</th>
-          <th>Lokasi</th>
-          <th>Brand</th>
-          <th>Asset ID</th>
-          <th>Aksi</th>
-        </tr>
-      </thead>
-      <tbody>
-        {rows.map((item, index) => {
-          const asset = assets.find(
-            (candidate) => candidate.condition === item.name,
-          )
-          return (
-            <tr key={item.id}>
-              <NumberCell page={page} pageSize={pageSize} index={index} />
-              <NameCell value={item.condition_name ?? item.name} />
-              <CodeCell value={item.status_code ?? item.code} />
-              <TextCell value={item.model_name ?? asset?.model} />
-              <TextCell value={item.location_name ?? asset?.location} />
-              <TextCell value={item.brand_name ?? asset?.brand} />
-              <CodeCell value={item.asset_id ?? asset?.id} />
+              <td>
+                {condition ? (
+                  <ConditionBadge
+                    condition={condition}
+                    color={
+                      conditions.find(
+                        (candidate) => candidate.name === condition,
+                      )?.tagColor
+                    }
+                  />
+                ) : (
+                  "—"
+                )}
+              </td>
               <ActionCell
                 item={item}
                 allowEdit={allowEdit}
