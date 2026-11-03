@@ -1577,9 +1577,9 @@ function CategoryTable({
         </tr>
       </thead>
       <tbody>
-        {rows.map((item) => (
+        {rows.map((item, index) => (
           <tr key={item.id}>
-            <InternalIdCell id={item.id} />
+            <NumberCell page={page} pageSize={pageSize} index={index} />
             <CodeCell
               value={item.display_id ?? item.category_id ?? item.id}
             />
@@ -1622,9 +1622,9 @@ function GroupTable({
         </tr>
       </thead>
       <tbody>
-        {rows.map((item) => (
+        {rows.map((item, index) => (
           <tr key={item.id}>
-            <InternalIdCell id={item.id} />
+            <NumberCell page={page} pageSize={pageSize} index={index} />
             <CodeCell value={item.display_id ?? item.group_id ?? item.id} />
             <NameCell value={item.name} />
             <CodeCell value={item.prefix ?? item.group_code ?? item.code} />
@@ -1667,9 +1667,9 @@ function TypeTable({
         </tr>
       </thead>
       <tbody>
-        {rows.map((item) => (
+        {rows.map((item, index) => (
           <tr key={item.id}>
-            <InternalIdCell id={item.id} />
+            <NumberCell page={page} pageSize={pageSize} index={index} />
             <CodeCell value={item.display_id ?? item.type_id ?? item.id} />
             <NameCell value={item.name} />
             <CodeCell value={item.prefix ?? item.type_code ?? item.code} />
@@ -1711,9 +1711,9 @@ function BrandTable({
         </tr>
       </thead>
       <tbody>
-        {rows.map((item) => (
+        {rows.map((item, index) => (
           <tr key={item.id}>
-            <InternalIdCell id={item.id} />
+            <NumberCell page={page} pageSize={pageSize} index={index} />
             <CodeCell value={item.display_id ?? item.brand_id ?? item.id} />
             <NameCell value={item.name} />
             <CodeCell value={item.prefix ?? item.brand_code ?? item.code} />
@@ -1755,9 +1755,9 @@ function ModelTable({
         </tr>
       </thead>
       <tbody>
-        {rows.map((item) => (
+        {rows.map((item, index) => (
           <tr key={item.id}>
-            <InternalIdCell id={item.id} />
+            <NumberCell page={page} pageSize={pageSize} index={index} />
             <CodeCell
               value={item.display_id ?? item.model_id ?? item.id}
             />
@@ -1856,10 +1856,6 @@ function NumberCell({
   index: number
 }) {
   return <td className="numeric">{(page - 1) * pageSize + index + 1}</td>
-}
-
-function InternalIdCell({ id }: { id: string }) {
-  return <td className="numeric">{Number(id)}</td>
 }
 
 function TextCell({ value }: { value?: string }) {
