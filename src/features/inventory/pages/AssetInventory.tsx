@@ -21,6 +21,7 @@ import {
   canManageExisting,
 } from "@/services/authorizationService"
 import type { Asset, MasterItem } from "@/data/demoData"
+import ConditionBadge from "@/components/ConditionBadge"
 import { downloadCsv, today } from "@/utils/helpers"
 import { getLocationsForBusinessUnit } from "@/utils/masterData"
 import { AssetForm } from "@/components/assets"
@@ -149,11 +150,8 @@ const findMasterReference = (
 const resolveImportedCondition = (value: string, conditions: MasterItem[]) => {
   const direct = findMasterReference(conditions, value, [
     "id",
-    "condition_id",
     "code",
-    "status_code",
     "name",
-    "condition_name",
   ])
   if (direct) return direct.name
 
@@ -850,7 +848,14 @@ export default function AssetInventory() {
                     {isVisible("Business Unit") && <td>{a.businessUnit}</td>}
                     {isVisible("Condition") && (
                       <td>
-                        <Badge>{a.condition}</Badge>
+                        <ConditionBadge
+                          condition={a.condition}
+                          color={
+                            master.conditions.find(
+                              (item) => item.name === a.condition,
+                            )?.tagColor
+                          }
+                        />
                       </td>
                     )}
                     {isVisible("Quantity") && (

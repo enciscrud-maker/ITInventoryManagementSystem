@@ -78,6 +78,8 @@ export type Transaction = {
   document: string
   assetId: string
   type: string
+  statusId?: string
+  statusCode?: string
   quantity: number
   location: string
   locationId?: string
@@ -155,6 +157,8 @@ export type MasterItem = {
   code: string
   parent?: string
   active?: boolean
+  tagColor?: string
+  usage?: "In" | "Out"
   category_id?: string
   category_name?: string
   category_code?: string
@@ -179,7 +183,6 @@ export type MasterItem = {
   business_unit_id?: string
   condition_id?: string
   condition_name?: string
-  status_code?: string
 }
 
 export const businessUnits = [
@@ -219,14 +222,6 @@ export const demoMaster: Record<string, MasterItem[]> = {
     location_id: `l${String(i + 1).padStart(4, "0")}`,
     location_name: name,
     location_code: ["JKT", "SBY", "CKR", "BPN", "MDN"][i],
-  })),
-  conditions: ["Good", "Damaged", "Disposal"].map((name, i) => ({
-    id: `s${String(i + 1).padStart(4, "0")}`,
-    name,
-    code: name.slice(0, 2).toUpperCase(),
-    condition_id: `s${String(i + 1).padStart(4, "0")}`,
-    condition_name: name,
-    status_code: name.slice(0, 2).toUpperCase(),
   })),
 }
 

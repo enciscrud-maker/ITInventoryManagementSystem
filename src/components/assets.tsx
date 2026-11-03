@@ -13,6 +13,7 @@ import {
 import { useInventory } from "../context/InventoryContext"
 import { useAuth } from "../auth/AuthContext"
 import { canManageExisting } from "../services/authorizationService"
+import ConditionBadge from "./ConditionBadge"
 import type { Asset } from "../data/demoData"
 import {
   generateAssetId,
@@ -481,7 +482,7 @@ export function AssetForm({
 }
 
 export function AssetDrawer() {
-  const { selectedAsset, setSelectedAsset, transactions, saveAsset } =
+  const { selectedAsset, setSelectedAsset, transactions, saveAsset, master } =
     useInventory()
   const { currentUser } = useAuth()
   const manageAllowed = canManageExisting(currentUser)
@@ -542,7 +543,14 @@ export function AssetDrawer() {
               {selectedAsset.type}
             </p>
           </div>
-          <Badge>{selectedAsset.condition}</Badge>
+          <ConditionBadge
+            condition={selectedAsset.condition}
+            color={
+              master.conditions.find(
+                (item) => item.name === selectedAsset.condition,
+              )?.tagColor
+            }
+          />
         </div>
         <div className="drawer-actions">
           {manageAllowed && (
@@ -577,7 +585,20 @@ export function AssetDrawer() {
                   {rows.map(([label, value]) => (
                     <div key={label}>
                       <dt>{label}</dt>
-                      <dd>{value || "—"}</dd>
+                      <dd>
+                        {label === "Condition" ? (
+                          <ConditionBadge
+                            condition={selectedAsset.condition}
+                            color={
+                              master.conditions.find(
+                                (item) => item.name === selectedAsset.condition,
+                              )?.tagColor
+                            }
+                          />
+                        ) : (
+                          value || "—"
+                        )}
+                      </dd>
                     </div>
                   ))}
                 </dl>

@@ -9,6 +9,7 @@ export type MasterKey =
   | "businessUnits"
   | "locations"
   | "conditions"
+  | "statuses"
 
 export type ValidationResult = {
   valid: boolean
@@ -27,13 +28,69 @@ const idConfig: Record<MasterKey, {
   models: { prefix: "m", field: "model_id", pattern: /^m\d{4}$/ },
   businessUnits: { prefix: "", field: "id", pattern: /^\d+$/ },
   locations: { prefix: "", field: "location_id", pattern: /^(?:l)?\d+$/ },
-  conditions: { prefix: "s", field: "condition_id", pattern: /^s\d{4}$/ },
+  conditions: { prefix: "s", field: "id", pattern: /^s\d{4}$/ },
+  statuses: { prefix: "st", field: "id", pattern: /^st\d{4}$/ },
 }
 
 const normalize = (value: string) => value.trim().toLocaleLowerCase()
 const historyKey = "iti-master-id-history"
 const deletedBusinessUnitsKey = "iti-deleted-business-units"
 const deletedLocationsKey = "iti-deleted-locations"
+
+export type StatusUsage = "In" | "Out"
+
+export function generateStatusCode(status: string, usage: StatusUsage) {
+  const slug = status
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+  return slug ? `${usage.toLowerCase()}_${slug}` : ""
+}
+
+export function isValidTagColor(value: string) {
+  return /^#[0-9a-f]{6}$/i.test(value)
+}
+
+export function defaultConditionTagColor(condition: string) {
+  switch (normalize(condition)) {
+    case "good":
+      return "#16a34a"
+    case "damaged":
+      return "#dc2626"
+    case "fair":
+      return "#ca8a04"
+    case "poor":
+      return "#ea580c"
+    case "disposal":
+      return "#64748b"
+    default:
+      return "#64748b"
+  }
+}
+
+export function serializeMasterData(master: Record<string, MasterItem[]>) {
+  return Object.fromEntries(
+    Object.entries(master).map(([key, records]) => [
+      key,
+      key === "conditions"
+        ? records.map((item) => ({
+            id: item.id,
+            condition: item.name,
+            tagColor: item.tagColor,
+          }))
+        : key === "statuses"
+          ? records.map((item) => ({
+              id: item.id,
+              status: item.name,
+              usage: item.usage,
+              code: item.code,
+            }))
+          : records,
+    ]),
+  )
+}
 
 function idHistory() {
   if (typeof localStorage === "undefined") return [] as string[]
@@ -491,6 +548,7 @@ export type MasterDataMigrationReferences = {
   assets?: BusinessUnitLocationReference[]
   transactions?: BusinessUnitLocationReference[]
   audits?: BusinessUnitLocationReference[]
+  conditionNames?: string[]
 }
 
 function sequentialId(
@@ -883,22 +941,96 @@ export function migrateMasterData(
       addLocation(undefined, name, unitId)
   })
 
-  const conditions = mergeByName(
-    Array.isArray(source.conditions) ? source.conditions : [],
-    demoMaster.conditions,
-    (item, seed, result) => {
-      const id = canonicalId(item, seed, result, "conditions")
-      return {
-        ...item,
-        id,
-        name: (item.condition_name ?? item.name).trim(),
-        code: item.status_code ?? item.code,
-        condition_id: id,
-        condition_name: (item.condition_name ?? item.name).trim(),
-        status_code: item.status_code ?? item.code,
-      }
-    },
+  type LegacyCondition = {
+    id?: unknown
+    condition?: unknown
+    condition_id?: unknown
+    condition_name?: unknown
+    name?: unknown
+    tagColor?: unknown
+  }
+  const conditionRows: LegacyCondition[] = Array.isArray(source.conditions)
+    ? (source.conditions as unknown as LegacyCondition[])
+    : demoMaster.conditions
+  const conditions: MasterItem[] = []
+  const addCondition = (item: LegacyCondition | undefined, nameValue: string) => {
+    const name = nameValue.trim()
+    if (!name || conditions.some((condition) => normalize(condition.name) === normalize(name)))
+      return
+    const seed = demoMaster.conditions.find(
+      (candidate) => normalize(candidate.name) === normalize(name),
+    )
+    const candidateId = String(item?.id ?? item?.condition_id ?? "")
+    const id =
+      candidateId && !conditions.some((condition) => condition.id === candidateId)
+        ? candidateId
+        : generateMasterId(conditions, "conditions")
+    conditions.push({
+      id,
+      name,
+      code: "",
+      tagColor:
+        typeof item?.tagColor === "string" && isValidTagColor(item.tagColor)
+          ? item.tagColor
+          : seed?.tagColor ?? defaultConditionTagColor(name),
+    })
+  }
+  conditionRows.forEach((item) => {
+    const nameValue =
+      typeof item.condition === "string"
+        ? item.condition
+        : typeof item.condition_name === "string"
+          ? item.condition_name
+          : typeof item.name === "string"
+            ? item.name
+            : ""
+    addCondition(item, nameValue)
+  })
+  ;(references.conditionNames ?? []).forEach((name) =>
+    addCondition(undefined, name),
   )
+
+  type LegacyStatus = {
+    id?: unknown
+    status?: unknown
+    name?: unknown
+    usage?: unknown
+  }
+  const statusRows: LegacyStatus[] = Array.isArray(source.statuses)
+    ? (source.statuses as unknown as LegacyStatus[])
+    : demoMaster.statuses
+  const statuses: MasterItem[] = []
+  statusRows.forEach((item) => {
+    const nameValue =
+      typeof item.status === "string"
+        ? item.status
+        : typeof item.name === "string"
+          ? item.name
+          : ""
+    const name = nameValue.trim()
+    if (!name) return
+    const seed = demoMaster.statuses.find(
+      (candidate) =>
+        candidate.id === item.id ||
+        normalize(candidate.name) === normalize(name),
+    )
+    const usageValue =
+      typeof item.usage === "string" ? item.usage.trim().toLowerCase() : ""
+    const usage: StatusUsage | undefined =
+      usageValue === "in"
+        ? "In"
+        : usageValue === "out"
+          ? "Out"
+          : seed?.usage
+    if (!usage) return
+    const candidateId = String(item.id ?? seed?.id ?? "")
+    const id =
+      candidateId && !statuses.some((status) => status.id === candidateId)
+        ? candidateId
+        : generateMasterId(statuses, "statuses")
+    const code = generateStatusCode(name, usage)
+    statuses.push({ id, name, code, usage })
+  })
 
   return {
     categories,
@@ -909,5 +1041,6 @@ export function migrateMasterData(
     businessUnits,
     locations,
     conditions,
+    statuses,
   }
 }

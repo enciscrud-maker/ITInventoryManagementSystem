@@ -3,6 +3,8 @@ import groupRows from "./master/group.json"
 import typeRows from "./master/type.json"
 import brandRows from "./master/brand.json"
 import modelRows from "./master/model.json"
+import conditionRows from "./master/condition.json"
+import statusRows from "./master/status.json"
 import type { MasterItem } from "./demoData"
 
 const clean = (value: string) => value.trim()
@@ -84,10 +86,26 @@ const models: MasterItem[] = modelRows.map((row) => ({
   active: true,
 }))
 
+const conditions: MasterItem[] = conditionRows.map((row) => ({
+  id: row.id,
+  name: clean(row.condition),
+  code: "",
+  tagColor: row.tagColor,
+}))
+
+const statuses: MasterItem[] = statusRows.map((row) => ({
+  id: row.id,
+  name: clean(row.status),
+  code: row.code,
+  usage: row.usage as "In" | "Out",
+}))
+
 export const canonicalMasterSeed: Record<string, MasterItem[]> = {
   categories,
   groups,
   types,
   brands,
   models,
+  conditions,
+  statuses,
 }

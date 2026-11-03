@@ -1,0 +1,50 @@
+[
+  {
+    "id": "st0001",
+    "status": "Return",
+    "usage": "In",
+    "code": "in_return"
+  },
+  {
+    "id": "st0002",
+    "status": "New Unit",
+    "usage": "In",
+    "code": "in_new_unit"
+  },
+  {
+    "id": "st0003",
+    "status": "After Service",
+    "usage": "In",
+    "code": "in_after_service"
+  },
+  {
+    "id": "st0004",
+    "status": "Borrowing",
+    "usage": "Out",
+    "code": "out_borrowing"
+  },
+  {
+    "id": "st0005",
+    "status": "Service",
+    "usage": "Out",
+    "code": "out_service"
+  },
+  {
+    "id": "st0006",
+    "status": "Disposal",
+    "usage": "Out",
+    "code": "out_disposal"
+  },
+  {
+    "id": "st0007",
+    "status": "Off Lease",
+    "usage": "Out",
+    "code": "out_off_lease"
+  },
+  {
+    "id": "st0008",
+    "status": "Handover",
+    "usage": "Out",
+    "code": "out_handover"
+  }
+]

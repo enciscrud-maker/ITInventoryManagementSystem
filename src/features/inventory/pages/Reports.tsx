@@ -7,6 +7,7 @@ import { useAuth } from "@/auth/AuthContext"
 import { canCreateInModule } from "@/services/authorizationService"
 import { downloadCsv, formatDate } from "@/utils/helpers"
 import { getLocationsForBusinessUnit } from "@/utils/masterData"
+import ConditionBadge from "@/components/ConditionBadge"
 import {
   Badge,
   Button,
@@ -129,7 +130,7 @@ export default function Reports() {
         filters.businessUnit === "All Business Units" ||
         t.businessUnitId === filters.businessUnit) &&
       (!filters.location || t.locationId === filters.location) &&
-      (!filters.transactionType || t.type === filters.transactionType),
+      (!filters.transactionType || t.statusCode === filters.transactionType),
   )
   const groups = Object.entries(
     filteredAssets.reduce<Record<string, number>>((m, a) => {
@@ -334,13 +335,10 @@ export default function Reports() {
               onChange={(e) => set("transactionType", e.target.value)}
               options={[
                 { value: "", label: "All transaction types" },
-                "New unit",
-                "Return",
-                "After service",
-                "Handover",
-                "Service",
-                "Off-lease",
-                "Disposal",
+                ...master.statuses.map((item) => ({
+                  value: item.code,
+                  label: `${item.name} (${item.usage})`,
+                })),
               ]}
             />
           </div>
@@ -401,8 +399,23 @@ export default function Reports() {
               <tbody>
                 {tableRows.map((r, i) => (
                   <tr key={i}>
-                    {Object.values(r).map((v, j) => (
-                      <td key={j}>{String(v ?? "—")}</td>
+                    {Object.entries(r).map(([key, value], j) => (
+                      <td key={j}>
+                        {report === "Assets by Condition" &&
+                        key === "label" &&
+                        typeof value === "string" ? (
+                          <ConditionBadge
+                            condition={value}
+                            color={
+                              master.conditions.find(
+                                (item) => item.name === value,
+                              )?.tagColor
+                            }
+                          />
+                        ) : (
+                          String(value ?? "—")
+                        )}
+                      </td>
                     ))}
                   </tr>
                 ))}
