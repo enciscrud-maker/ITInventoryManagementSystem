@@ -22,7 +22,7 @@ export type MasterDataSnapshot = {
   groups: AssetGroupDto[]
 }
 
-const cacheDurationMs = 30_000
+const cacheDurationMs = 120_000
 const pageSize = 100
 
 let cachedValue: MasterDataSnapshot | undefined

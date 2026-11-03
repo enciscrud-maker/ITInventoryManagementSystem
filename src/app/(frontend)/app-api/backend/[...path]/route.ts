@@ -18,6 +18,8 @@ const masterDataResources = new Set([
   "api/asset-groups",
 ])
 const assetsReadResource = "api/assets"
+const goodsEndpoint =
+  /^api\/goods-(?:in|out)(?:\/([1-9]\d*)(?:\/(status|attachments))?)?$/
 
 const timeoutMs = 10_000
 const cookieOptions = {
@@ -56,6 +58,15 @@ async function proxyAuthRequest(
   const resource = path.length >= 2 ? path.slice(0, 2).join("/") : ""
   const isMasterDataEndpoint = masterDataResources.has(resource)
   const isAssetsReadEndpoint = endpoint === assetsReadResource
+  const goodsMatch = endpoint.match(goodsEndpoint)
+  const isGoodsEndpoint = goodsMatch !== null
+  const isGoodsListEndpoint = isGoodsEndpoint && path.length === 2
+  const isGoodsDetailEndpoint =
+    isGoodsEndpoint && path.length === 3 && goodsMatch?.[1] !== undefined
+  const isGoodsStatusEndpoint =
+    isGoodsEndpoint && path.length === 4 && goodsMatch?.[2] === "status"
+  const isGoodsAttachmentEndpoint =
+    isGoodsEndpoint && path.length === 4 && goodsMatch?.[2] === "attachments"
   const hasResourceId =
     path.length === 3 && /^\d+$/.test(path[2]) && Number(path[2]) > 0
   const allowedMasterDataMethod =
@@ -64,13 +75,24 @@ async function proxyAuthRequest(
       : hasResourceId && ["GET", "PUT", "DELETE"].includes(request.method)
   const expectedMethod = allowedMethods[endpoint]
 
-  if (!isAuthEndpoint && !isMasterDataEndpoint && !isAssetsReadEndpoint) {
+  const allowedGoodsMethod =
+    (isGoodsListEndpoint && ["GET", "POST"].includes(request.method)) ||
+    (isGoodsDetailEndpoint && request.method === "GET") ||
+    (isGoodsStatusEndpoint && request.method === "PATCH") ||
+    (isGoodsAttachmentEndpoint && request.method === "POST")
+  if (
+    !isAuthEndpoint &&
+    !isMasterDataEndpoint &&
+    !isAssetsReadEndpoint &&
+    !isGoodsEndpoint
+  ) {
     return NextResponse.json({ error: "Not found." }, { status: 404 })
   }
   if (
     (isAuthEndpoint && request.method !== expectedMethod) ||
     (isMasterDataEndpoint && !allowedMasterDataMethod) ||
-    (isAssetsReadEndpoint && request.method !== "GET")
+    (isAssetsReadEndpoint && request.method !== "GET") ||
+    (isGoodsEndpoint && !allowedGoodsMethod)
   ) {
     return NextResponse.json({ error: "Method not allowed." }, { status: 405 })
   }
@@ -101,7 +123,8 @@ async function proxyAuthRequest(
   if (
     (endpoint === "api/auth/me" ||
       isMasterDataEndpoint ||
-      isAssetsReadEndpoint) &&
+      isAssetsReadEndpoint ||
+      isGoodsEndpoint) &&
     !accessToken
   ) {
     return problemResponse(401, "Unauthorized")
@@ -117,19 +140,23 @@ async function proxyAuthRequest(
     const headers = new Headers()
     const accept = request.headers.get("accept")
     if (accept) headers.set("accept", accept)
-    headers.set("content-type", "application/json")
+    headers.set(
+      "content-type",
+      request.headers.get("content-type") ?? "application/json",
+    )
     const origin = request.headers.get("origin")
     if (origin) headers.set("origin", origin)
     if (
       (endpoint === "api/auth/me" ||
         isMasterDataEndpoint ||
-        isAssetsReadEndpoint) &&
+        isAssetsReadEndpoint ||
+        isGoodsEndpoint) &&
       accessToken
     ) {
       headers.set("authorization", `Bearer ${accessToken}`)
     }
 
-    let requestBody: string | undefined
+    let requestBody: BodyInit | undefined
     if (endpoint === "api/auth/login") {
       requestBody = await request.text()
     } else if (endpoint === "api/auth/refresh") {
@@ -139,10 +166,16 @@ async function proxyAuthRequest(
       if (accessToken) headers.set("authorization", `Bearer ${accessToken}`)
     } else if (isMasterDataEndpoint && request.method !== "GET") {
       requestBody = await request.text()
+    } else if (isGoodsEndpoint && request.method !== "GET") {
+      requestBody = await request.arrayBuffer()
     }
 
     const requestUrl = new URL(`/${endpoint}`, `${apiBaseUrl}/`)
-    if (isMasterDataEndpoint || isAssetsReadEndpoint) {
+    if (
+      isMasterDataEndpoint ||
+      isAssetsReadEndpoint ||
+      (isGoodsListEndpoint && request.method === "GET")
+    ) {
       requestUrl.search = new URL(request.url).search
     }
 
@@ -270,4 +303,5 @@ async function proxyAuthRequest(
 export const GET = proxyAuthRequest
 export const POST = proxyAuthRequest
 export const PUT = proxyAuthRequest
+export const PATCH = proxyAuthRequest
 export const DELETE = proxyAuthRequest

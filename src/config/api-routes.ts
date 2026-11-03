@@ -14,6 +14,8 @@ export const apiRoutes = {
   },
   inventory: {
     assets: "/app-api/backend/api/assets",
+    goodsIn: "/app-api/backend/api/goods-in",
+    goodsOut: "/app-api/backend/api/goods-out",
   },
   app: {
     accounts: "/app-api/accounts",

@@ -26,7 +26,6 @@ import {
 import {
   demoAudits,
   demoMaster,
-  demoTransactions,
   type Asset,
   type Audit,
   type AuditItem,
@@ -95,6 +94,7 @@ import {
 } from "@/services/api/masterDataCache"
 import { toMasterItems } from "@/services/api/mappers/master-data.mapper"
 import { assetsApi } from "@/services/api/assets.api"
+import { transactionsApi } from "@/services/api/transactions.api"
 
 type State = {
   assets: Asset[]
@@ -112,12 +112,17 @@ type State = {
   refreshMasterData: () => Promise<boolean>
   refreshAssets: () => Promise<boolean>
   saveAsset: (asset: Asset) => void
-  saveTransaction: (tx: Transaction) => boolean
+  saveTransaction: (tx: Transaction, files?: File[]) => Promise<boolean>
   updateTransactionStatus: (
     id: string,
+    direction: Transaction["direction"],
     status: TransactionStatus,
     notes?: string,
-  ) => boolean
+  ) => Promise<boolean>
+  loadTransactionDetails: (
+    direction: Transaction["direction"],
+    id: string,
+  ) => Promise<Transaction | null>
   saveAudit: (audit: Audit) => void
   updateAuditItem: (
     auditId: string,
@@ -164,14 +169,12 @@ const read = <T,>(key: string, fallback: T): T => {
 const normalizeTransaction = (transaction: Transaction): Transaction => {
   const status: TransactionStatus =
     transaction.status === "Completed" ? "Completed" : "In Progress"
-  const masterStatus =
-    demoMaster.statuses.find(
-      (item) =>
-        item.usage === transaction.direction &&
-        (item.id === transaction.statusId ||
-          item.name.toLocaleLowerCase() ===
-            transaction.type.toLocaleLowerCase()),
-    )
+  const masterStatus = demoMaster.statuses.find(
+    (item) =>
+      item.usage === transaction.direction &&
+      (item.id === transaction.statusId ||
+        item.name.toLocaleLowerCase() === transaction.type.toLocaleLowerCase()),
+  )
   const assetRows: TransactionAssetItem[] = transaction.assets?.length
     ? transaction.assets
     : [
@@ -207,11 +210,7 @@ const normalizeTransaction = (transaction: Transaction): Transaction => {
 export function InventoryProvider({ children }: { children: React.ReactNode }) {
   const { currentUser } = useAuth()
   const [assets, setAssets] = useState<Asset[]>([])
-  const [transactions, setTransactions] = useState(() =>
-    read<Transaction[]>("iti-transactions", demoTransactions).map(
-      normalizeTransaction,
-    ),
-  )
+  const [transactions, setTransactions] = useState<Transaction[]>([])
   const [audits, setAudits] = useState(() =>
     read<Audit[]>("iti-audits", demoAudits).map((audit) =>
       normalizeAudit(audit, assets),
@@ -258,9 +257,6 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
   const appliedMasterData = useRef<MasterDataSnapshot | null>(null)
   const masterDataScope = useRef(currentUser.id)
   useEffect(() => {
-    localStorage.setItem("iti-transactions", JSON.stringify(transactions))
-  }, [transactions])
-  useEffect(() => {
     try {
       localStorage.setItem("iti-audits", JSON.stringify(audits))
     } catch {
@@ -270,7 +266,10 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     }
   }, [audits])
   useEffect(() => {
-    localStorage.setItem("iti-master", JSON.stringify(serializeMasterData(master)))
+    localStorage.setItem(
+      "iti-master",
+      JSON.stringify(serializeMasterData(master)),
+    )
   }, [master])
   useEffect(() => {
     setAssets((current) =>
@@ -361,9 +360,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
               item.actualLocationId === audit.items[index]?.actualLocationId &&
               item.systemLocationId === audit.items[index]?.systemLocationId,
           )
-        return same
-          ? audit
-          : { ...normalized, items }
+        return same ? audit : { ...normalized, items }
       }),
     )
   }, [master])
@@ -393,6 +390,58 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     void refreshAssets()
   }, [refreshAssets])
+  const refreshTransactions = useCallback(async () => {
+    const [goodsInResult, goodsOutResult] = await Promise.all([
+      transactionsApi.list("In"),
+      transactionsApi.list("Out"),
+    ])
+    if (!goodsInResult.success) {
+      notify(goodsInResult.error)
+      return false
+    }
+    if (!goodsOutResult.success) {
+      notify(goodsOutResult.error)
+      return false
+    }
+    setTransactions(
+      [...goodsInResult.data, ...goodsOutResult.data].sort((a, b) =>
+        (b.formIssueDate ?? b.date).localeCompare(a.formIssueDate ?? a.date),
+      ),
+    )
+    return true
+  }, [notify])
+  useEffect(() => {
+    void refreshTransactions()
+  }, [currentUser.id, refreshTransactions])
+  const loadTransactionDetails = useCallback(
+    async (direction: Transaction["direction"], id: string) => {
+      const current = transactions.find(
+        (item) => item.id === id && item.direction === direction,
+      )
+      if (!current) return null
+      const result = await transactionsApi.getById(direction, id)
+      if (!result.success) {
+        notify(result.error)
+        return null
+      }
+      const loaded = normalizeTransaction({
+        ...result.data,
+        businessUnitId: current.businessUnitId,
+        locationId: current.locationId,
+        statusId: current.statusId,
+        statusCode: current.statusCode,
+      })
+      setTransactions((value) =>
+        value.map((item) =>
+          item.id === id && item.direction === current.direction
+            ? loaded
+            : item,
+        ),
+      )
+      return loaded
+    },
+    [notify, transactions],
+  )
   const refreshMasterData = useCallback(async () => {
     if (masterDataScope.current !== currentUser.id) {
       masterDataScope.current = currentUser.id
@@ -509,11 +558,30 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     }
     notify("Asset saved successfully")
   }
-  const saveTransaction = (transaction: Transaction) => {
-    const permission =
-      transaction.direction === "In" ? "goods-in" : "goods-out"
+  const saveTransaction = async (
+    transaction: Transaction,
+    files: File[] = [],
+  ) => {
+    const permission = transaction.direction === "In" ? "goods-in" : "goods-out"
     if (!canCreateInModule(currentUser, permission)) {
-      notify(`You do not have permission to create Goods ${transaction.direction}`)
+      notify(
+        `You do not have permission to create Goods ${transaction.direction}`,
+      )
+      return false
+    }
+    const invalidFile = files.find((file) => {
+      const extension = file.name.split(".").pop()?.toLowerCase()
+      return (
+        file.size > 10 * 1024 * 1024 ||
+        !["pdf", "png", "jpg", "jpeg", "doc", "docx", "xls", "xlsx"].includes(
+          extension ?? "",
+        )
+      )
+    })
+    if (invalidFile) {
+      notify(
+        `${invalidFile.name} tidak didukung. Gunakan PDF, PNG, JPG, DOC, DOCX, XLS, atau XLSX maksimal 10 MB.`,
+      )
       return false
     }
     const masterStatus = master.statuses.find(
@@ -547,7 +615,10 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
           transaction.businessUnitId ?? "",
         ).find((location) => location.id === transaction.locationId)
       : undefined
-    if (!selectedBusinessUnit || (transaction.locationId && !selectedLocation)) {
+    if (
+      !selectedBusinessUnit ||
+      (transaction.locationId && !selectedLocation)
+    ) {
       notify("Select a valid Business Unit and a Location belonging to it")
       return false
     }
@@ -589,7 +660,25 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       return false
     }
 
-    setTransactions((value) => [tx, ...value])
+    const result = await transactionsApi.create(tx)
+    if (!result.success) {
+      notify(result.error)
+      return false
+    }
+    const savedStatus = master.statuses.find(
+      (item) =>
+        item.usage === result.data.direction && item.name === result.data.type,
+    )
+    const saved = normalizeTransaction({
+      ...result.data,
+      businessUnitId: selectedBusinessUnit.id,
+      locationId: selectedLocation?.id ?? undefined,
+      statusId: savedStatus?.id ?? tx.statusId,
+      statusCode: savedStatus?.code ?? tx.statusCode,
+      assets: result.data.assets?.length ? result.data.assets : tx.assets,
+      supportingDocuments: tx.supportingDocuments,
+    })
+    setTransactions((value) => [saved, ...value])
     setAssets((value) =>
       value.map((asset) => {
         const row = rows.find((item) => item.assetId === asset.id)
@@ -615,16 +704,44 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     )
     recordDataActivity({
       actor: currentUser,
-      module: tx.direction === "In" ? "Goods In" : "Goods Out",
+      module: saved.direction === "In" ? "Goods In" : "Goods Out",
       action: "Create",
-      recordId: tx.id,
-      recordLabel: tx.document,
+      recordId: saved.id,
+      recordLabel: saved.document,
     })
-    notify(`${tx.direction === "In" ? "Goods-In" : "Goods-Out"} recorded`)
+    const failedUploads: string[] = []
+    const uploadedDocuments: NonNullable<Transaction["supportingDocuments"]> =
+      []
+    for (const [index, file] of files.entries()) {
+      const upload = await transactionsApi.uploadAttachment(saved, file)
+      if (!upload.success) {
+        failedUploads.push(`${file.name} (${upload.error})`)
+      } else {
+        const document = tx.supportingDocuments?.[index]
+        if (document) uploadedDocuments.push(document)
+      }
+    }
+    if (files.length) {
+      setTransactions((value) =>
+        value.map((item) =>
+          item.id === saved.id && item.direction === saved.direction
+            ? { ...item, supportingDocuments: uploadedDocuments }
+            : item,
+        ),
+      )
+    }
+    notify(
+      failedUploads.length
+        ? `${
+            saved.direction === "In" ? "Goods-In" : "Goods-Out"
+          } recorded, but these attachments could not be uploaded: ${failedUploads.join(", ")}`
+        : `${saved.direction === "In" ? "Goods-In" : "Goods-Out"} recorded`,
+    )
     return true
   }
-  const updateTransactionStatus = (
+  const updateTransactionStatus = async (
     id: string,
+    direction: Transaction["direction"],
     status: TransactionStatus,
     notes?: string,
   ) => {
@@ -632,27 +749,48 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       notify("Only Admin can update existing transactions")
       return false
     }
-    const transaction = transactions.find((item) => item.id === id)
+    const transaction = transactions.find(
+      (item) => item.id === id && item.direction === direction,
+    )
     if (!transaction || transaction.status === status) return false
+    const result = await transactionsApi.updateStatus(
+      transaction,
+      status,
+      notes,
+    )
+    if (!result.success) {
+      notify(result.error)
+      return false
+    }
+    const updated = normalizeTransaction({
+      ...result.data,
+      businessUnitId: transaction.businessUnitId,
+      locationId: transaction.locationId,
+      statusId: transaction.statusId,
+      statusCode: transaction.statusCode,
+    })
     const timestamp = new Date().toISOString()
     setTransactions((value) =>
       value.map((item) =>
-        item.id === id
+        item.id === id && item.direction === direction
           ? {
-              ...item,
-              status,
+              ...updated,
               statusHistory: [
-                {
-                  id: `HIS-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-                  previousStatus: item.status,
-                  newStatus: status,
-                  actorAccountId: currentUser.id,
-                  actorName: currentUser.name,
-                  actorNik: currentUser.nik,
-                  timestamp,
-                  notes: notes?.trim() || undefined,
-                },
-                ...(item.statusHistory ?? []),
+                ...(updated.statusHistory ?? []),
+                ...(result.data.statusHistory?.length
+                  ? []
+                  : [
+                      {
+                        id: `HIS-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+                        previousStatus: item.status,
+                        newStatus: status,
+                        actorAccountId: currentUser.id,
+                        actorName: currentUser.name,
+                        actorNik: currentUser.nik,
+                        timestamp,
+                        notes: notes?.trim() || undefined,
+                      },
+                    ]),
               ],
             }
           : item,
@@ -662,8 +800,8 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       actor: currentUser,
       module: transaction.direction === "In" ? "Goods In" : "Goods Out",
       action: "Update",
-      recordId: transaction.id,
-      recordLabel: transaction.document,
+      recordId: updated.id,
+      recordLabel: updated.document,
       changes: {
         status: {
           before: transaction.status,
@@ -697,13 +835,12 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       (unit) => unit.id === audit.businessUnitId,
     )
     const auditLocation = audit.locationId
-      ? getLocationsForBusinessUnit(master.locations, audit.businessUnitId ?? "")
-          .find((location) => location.id === audit.locationId)
+      ? getLocationsForBusinessUnit(
+          master.locations,
+          audit.businessUnitId ?? "",
+        ).find((location) => location.id === audit.locationId)
       : undefined
-    if (
-      !auditBusinessUnit ||
-      (audit.locationId && !auditLocation)
-    ) {
+    if (!auditBusinessUnit || (audit.locationId && !auditLocation)) {
       notify("Select a valid Business Unit and a Location belonging to it")
       return
     }
@@ -1149,7 +1286,9 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       const existing = records.find((candidate) => candidate.id === item.id)
       const name = item.name.trim()
       if (!name) {
-        notify(`${key === "conditions" ? "Condition" : "Status"} name is required`)
+        notify(
+          `${key === "conditions" ? "Condition" : "Status"} name is required`,
+        )
         return false
       }
 
@@ -1163,7 +1302,8 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
           records.some(
             (candidate) =>
               candidate.id !== existing?.id &&
-              candidate.name.trim().toLocaleLowerCase() === name.toLocaleLowerCase(),
+              candidate.name.trim().toLocaleLowerCase() ===
+                name.toLocaleLowerCase(),
           )
         ) {
           notify("Condition name already exists")
@@ -1208,7 +1348,9 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
               transaction.direction !== usage,
           )
         ) {
-          notify("Usage cannot change while this Status is referenced by transactions in the other direction")
+          notify(
+            "Usage cannot change while this Status is referenced by transactions in the other direction",
+          )
           return false
         }
         normalized = { id: existing?.id ?? item.id, name, usage, code }
@@ -1256,9 +1398,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       return true
     }
     if (key === "categories") {
-      const businessId = String(
-        item.category_id ?? item.display_id ?? item.id,
-      )
+      const businessId = String(item.category_id ?? item.display_id ?? item.id)
       const existing = master.categories.find(
         (candidate) =>
           candidate.id === item.id || candidate.category_id === businessId,
@@ -1272,12 +1412,16 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         notify("Category ID cannot be changed after creation")
         return false
       }
-      if (existing && (existing.category_id ?? existing.display_id) !== businessId) {
+      if (
+        existing &&
+        (existing.category_id ?? existing.display_id) !== businessId
+      ) {
         notify("Category ID cannot be changed after creation")
         return false
       }
       const internalId =
-        existing?.id ?? generateMasterInternalId(master.categories, "categories")
+        existing?.id ??
+        generateMasterInternalId(master.categories, "categories")
       const normalized = createCategoryRecord(
         internalId,
         businessId,
@@ -1292,9 +1436,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
           (candidate) => candidate.id === internalId,
         )
           ? value.categories.map((candidate) =>
-              candidate.id === internalId
-                ? normalized
-                : candidate,
+              candidate.id === internalId ? normalized : candidate,
             )
           : [normalized, ...value.categories],
         groups: value.groups.map((group) =>
@@ -1318,9 +1460,13 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         ),
         models: value.models.map((model) => {
           if (model.category_id !== internalId) return model
-          const group = value.groups.find((entry) => entry.id === model.group_id)
+          const group = value.groups.find(
+            (entry) => entry.id === model.group_id,
+          )
           const type = value.types.find((entry) => entry.id === model.type_id)
-          const brand = value.brands.find((entry) => entry.id === model.brand_id)
+          const brand = value.brands.find(
+            (entry) => entry.id === model.brand_id,
+          )
           return {
             ...model,
             category_name: normalized.name,
@@ -1372,7 +1518,10 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         notify("Group ID cannot be changed after creation")
         return false
       }
-      if (existing && (existing.group_id ?? existing.display_id) !== businessId) {
+      if (
+        existing &&
+        (existing.group_id ?? existing.display_id) !== businessId
+      ) {
         notify("Group ID cannot be changed after creation")
         return false
       }
@@ -1391,7 +1540,9 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
           master.models.some((model) => model.group_id === existing.id) ||
           assets.some((asset) => asset.groupId === existing.id))
       ) {
-        notify("Category cannot change while Types, Models, or Assets reference this Group")
+        notify(
+          "Category cannot change while Types, Models, or Assets reference this Group",
+        )
         return false
       }
       const internalId =
@@ -1407,13 +1558,9 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       reserveMasterInternalId("groups", internalId)
       setMaster((value) => ({
         ...value,
-        groups: value.groups.some(
-          (candidate) => candidate.id === internalId,
-        )
+        groups: value.groups.some((candidate) => candidate.id === internalId)
           ? value.groups.map((candidate) =>
-              candidate.id === internalId
-                ? normalized
-                : candidate,
+              candidate.id === internalId ? normalized : candidate,
             )
           : [normalized, ...value.groups],
         types: value.types.map((type) =>
@@ -1432,7 +1579,9 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         models: value.models.map((model) => {
           if (model.group_id !== internalId) return model
           const type = value.types.find((entry) => entry.id === model.type_id)
-          const brand = value.brands.find((entry) => entry.id === model.brand_id)
+          const brand = value.brands.find(
+            (entry) => entry.id === model.brand_id,
+          )
           return {
             ...model,
             group_name: normalized.name,
@@ -1441,7 +1590,9 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             category_name: normalized.category_name,
             category_code: normalized.category_code,
             asset_id: generateAssetId(
-              value.categories.find((entry) => entry.id === normalized.category_id),
+              value.categories.find(
+                (entry) => entry.id === normalized.category_id,
+              ),
               normalized,
               type,
               brand,
@@ -1490,10 +1641,10 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       const name = item.name.trim()
       const code =
         key === "types"
-          ? item.type_code ?? item.code
+          ? (item.type_code ?? item.code)
           : key === "brands"
-            ? item.brand_code ?? item.code
-            : item.model_code ?? item.code
+            ? (item.brand_code ?? item.code)
+            : (item.model_code ?? item.code)
       if (!name) {
         notify(`${key.slice(0, -1)} name is required`)
         return false
@@ -1535,7 +1686,10 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
 
       let normalized: MasterItem
       if (key === "types") {
-        const group = resolveGroupById(master.groups, String(item.group_id ?? ""))
+        const group = resolveGroupById(
+          master.groups,
+          String(item.group_id ?? ""),
+        )
         const category = group
           ? resolveCategoryById(
               master.categories,
@@ -1552,7 +1706,9 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
           (master.models.some((model) => model.type_id === existing.id) ||
             assets.some((asset) => asset.typeId === existing.id))
         ) {
-          notify("Group cannot change while Models or Assets reference this Type")
+          notify(
+            "Group cannot change while Models or Assets reference this Type",
+          )
           return false
         }
         if (!code?.trim()) {
@@ -1564,7 +1720,8 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             (candidate) =>
               candidate.id !== existing?.id &&
               (candidate.type_id === businessId ||
-                candidate.code.toLocaleLowerCase() === code.toLocaleLowerCase()),
+                candidate.code.toLocaleLowerCase() ===
+                  code.toLocaleLowerCase()),
           )
         ) {
           notify("Type ID or code already exists")
@@ -1605,7 +1762,8 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
             (candidate) =>
               candidate.id !== existing?.id &&
               (candidate.brand_id === businessId ||
-                candidate.code.toLocaleLowerCase() === code.toLocaleLowerCase()),
+                candidate.code.toLocaleLowerCase() ===
+                  code.toLocaleLowerCase()),
           )
         ) {
           notify("Brand ID or code already exists")
@@ -1621,7 +1779,9 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
               model.type_id !== type.id,
           )
         ) {
-          notify("Brand Type cannot change while linked Models use another Type")
+          notify(
+            "Brand Type cannot change while linked Models use another Type",
+          )
           return false
         }
         if (
@@ -1634,7 +1794,9 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
               asset.typeId !== type.id,
           )
         ) {
-          notify("Brand Type cannot change while linked Assets use another Type")
+          notify(
+            "Brand Type cannot change while linked Assets use another Type",
+          )
           return false
         }
         normalized = {
@@ -1663,7 +1825,10 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
               String(group.category_id ?? ""),
             )
           : undefined
-        const brand = resolveBrandById(master.brands, String(item.brand_id ?? ""))
+        const brand = resolveBrandById(
+          master.brands,
+          String(item.brand_id ?? ""),
+        )
         const assetId = generateAssetId(category, group, type, brand)
         if (
           !category ||
@@ -1674,7 +1839,9 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
           item.group_id !== group.id ||
           (brand.type_id && brand.type_id !== type.id)
         ) {
-          notify("Cannot save Model: the selected classification relationships are inconsistent")
+          notify(
+            "Cannot save Model: the selected classification relationships are inconsistent",
+          )
           return false
         }
         if (!assetId) {
@@ -1818,7 +1985,8 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       if (!existing || Object.keys(changes ?? {}).length)
         recordDataActivity({
           actor: currentUser,
-          module: key === "types" ? "Type" : key === "brands" ? "Brand" : "Model",
+          module:
+            key === "types" ? "Type" : key === "brands" ? "Brand" : "Model",
           action: existing ? "Update" : "Create",
           recordId: businessId,
           recordLabel: name,
@@ -1893,7 +2061,8 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       notify("Business Unit name already exists")
       return false
     }
-    const unitId = existing?.id ?? generateMasterId(master.businessUnits, "businessUnits")
+    const unitId =
+      existing?.id ?? generateMasterId(master.businessUnits, "businessUnits")
     const nextUnit: MasterItem = {
       id: unitId,
       name,
@@ -2031,18 +2200,13 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       setAudits((value) =>
         value.map((audit) => ({
           ...audit,
-          location:
-            audit.locationId === locationId ? name : audit.location,
+          location: audit.locationId === locationId ? name : audit.location,
           items: audit.items.map((item) => ({
             ...item,
             actualLocation:
-              item.actualLocationId === locationId
-                ? name
-                : item.actualLocation,
+              item.actualLocationId === locationId ? name : item.actualLocation,
             systemLocation:
-              item.systemLocationId === locationId
-                ? name
-                : item.systemLocation,
+              item.systemLocationId === locationId ? name : item.systemLocation,
           })),
         })),
       )
@@ -2087,7 +2251,8 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
           transaction.businessUnit === unit.name,
       ) ||
       audits.some(
-        (audit) => audit.businessUnitId === id || audit.businessUnit === unit.name,
+        (audit) =>
+          audit.businessUnitId === id || audit.businessUnit === unit.name,
       )
     if (hasLocations || hasReferences) {
       notify(
@@ -2252,11 +2417,11 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
                 ? "Cannot delete Brand: it is still referenced by Models or Assets"
                 : key === "models"
                   ? "Cannot delete Model: it is still referenced by Assets"
-            : key === "conditions"
-              ? "Cannot delete Condition: it is still referenced by assets or transactions"
-              : key === "statuses"
-                ? "Cannot delete Status: it is still referenced by transactions"
-            : "Cannot delete: record is still referenced",
+                  : key === "conditions"
+                    ? "Cannot delete Condition: it is still referenced by assets or transactions"
+                    : key === "statuses"
+                      ? "Cannot delete Status: it is still referenced by transactions"
+                      : "Cannot delete: record is still referenced",
       )
       return false
     }
@@ -2333,6 +2498,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       masterDataRefreshing,
       refreshMasterData,
       refreshAssets,
+      loadTransactionDetails,
       saveAsset,
       saveTransaction,
       updateTransactionStatus,

@@ -193,7 +193,9 @@ function TransactionSummary({
             <>
               {transaction.type}
               {transaction.statusCode && (
-                <small className="table-subline">{transaction.statusCode}</small>
+                <small className="table-subline">
+                  {transaction.statusCode}
+                </small>
               )}
             </>
           </SummaryField>
@@ -236,7 +238,9 @@ function TransactionSummary({
                     <td>
                       <strong>
                         {row.itemName ||
-                          (asset ? `${asset.brand} ${asset.model}` : row.assetId)}
+                          (asset
+                            ? `${asset.brand} ${asset.model}`
+                            : row.assetId)}
                       </strong>
                       <small className="table-subline">{row.assetId}</small>
                     </td>
@@ -287,9 +291,7 @@ function TransactionSummary({
         <dl>
           <SummaryField
             label={
-              incoming
-                ? "Source / Sender"
-                : "Recipient / Receiver / Borrower"
+              incoming ? "Source / Sender" : "Recipient / Receiver / Borrower"
             }
           >
             {party.name}
@@ -298,9 +300,7 @@ function TransactionSummary({
             {transaction.businessUnit}
           </SummaryField>
           <SummaryField
-            label={
-              incoming ? "Destination Location" : "Destination / Provider"
-            }
+            label={incoming ? "Destination Location" : "Destination / Provider"}
           >
             {transaction.location}
           </SummaryField>
@@ -341,6 +341,7 @@ export default function Transactions({
     businessUnit,
     saveTransaction,
     updateTransactionStatus,
+    loadTransactionDetails,
   } = useInventory()
   const { currentUser } = useAuth()
   const createAllowed = canCreateInModule(
@@ -358,12 +359,12 @@ export default function Transactions({
   const [statusFilter, setStatusFilter] = useState("")
   const [page, setPage] = useState(1)
   const [form, setForm] = useState<TransactionForm | null>(null)
+  const [attachmentFiles, setAttachmentFiles] = useState<File[]>([])
   const [formError, setFormError] = useState("")
   const [submitting, setSubmitting] = useState(false)
   const submittingRef = useRef(false)
   const [selectedId, setSelectedId] = useState("")
-  const [nextStatus, setNextStatus] =
-    useState<TransactionStatus>("In Progress")
+  const [nextStatus, setNextStatus] = useState<TransactionStatus>("In Progress")
   const [statusNotes, setStatusNotes] = useState("")
   const [monthFilter, setMonthFilter] = useState(today().slice(0, 7))
 
@@ -389,22 +390,15 @@ export default function Transactions({
           (!typeFilter || transaction.type === typeFilter) &&
           (!statusFilter || transaction.status === statusFilter),
       ),
-    [
-      transactions,
-      direction,
-      businessUnit,
-      search,
-      typeFilter,
-      statusFilter,
-    ],
+    [transactions, direction, businessUnit, search, typeFilter, statusFilter],
   )
   const rows = filtered.slice((page - 1) * 10, page * 10)
   const month = filtered.filter(
-    (transaction) =>
-      transaction.date.slice(0, 7) === monthFilter,
+    (transaction) => transaction.date.slice(0, 7) === monthFilter,
   )
   const selectedTransaction = transactions.find(
-    (transaction) => transaction.id === selectedId,
+    (transaction) =>
+      `${transaction.direction}:${transaction.id}` === selectedId,
   )
 
   const openCreate = () => {
@@ -431,6 +425,7 @@ export default function Transactions({
       approverName: "",
       inventoryNotes: "",
     })
+    setAttachmentFiles([])
     setStep(1)
     setFormError("")
     setSubmitting(false)
@@ -438,7 +433,7 @@ export default function Transactions({
     setOpen(true)
   }
 
-  const setFormValue = <K extends keyof TransactionForm>(
+  const setFormValue = <K extends keyof TransactionForm,>(
     key: K,
     value: TransactionForm[K],
   ) => setForm((current) => (current ? { ...current, [key]: value } : current))
@@ -581,53 +576,56 @@ export default function Transactions({
     if (!error) setStep((current) => Math.min(4, current + 1))
   }
 
-  const submit = () => {
+  const submit = async () => {
     if (!form || submittingRef.current) return
-    const error =
-      validateStep(1) || validateStep(2) || validateStep(3)
+    const error = validateStep(1) || validateStep(2) || validateStep(3)
     setFormError(error)
     if (error) return
     submittingRef.current = true
     setSubmitting(true)
     const quantity = form.assets.reduce((sum, row) => sum + row.quantity, 0)
     const firstAsset = form.assets[0]
-    const created = saveTransaction({
-      id: form.id,
-      direction,
-      date: form.formIssueDate,
-      document: form.document,
-      assetId: firstAsset.assetId,
-      type: form.type,
-      statusId: form.statusId,
-      statusCode: form.statusCode,
-      quantity,
-      location: form.location,
-      locationId: form.locationId || undefined,
-      businessUnit: form.businessUnit,
-      businessUnitId: form.businessUnitId,
-      status: "In Progress",
-      user: form.party.name,
-      po: firstAsset.referenceNumber,
-      notes: form.inventoryNotes,
-      requestDate: form.formIssueDate,
-      formIssueDate: form.formIssueDate,
-      party: form.party,
-      assets: form.assets,
-      supportingDocuments: form.supportingDocuments,
-      requestNumber: previewRequestNumber(
+    const created = await saveTransaction(
+      {
+        id: form.id,
+        direction,
+        date: form.formIssueDate,
+        document: form.document,
+        assetId: firstAsset.assetId,
+        type: form.type,
+        statusId: form.statusId,
+        statusCode: form.statusCode,
+        quantity,
+        location: form.location,
+        locationId: form.locationId || undefined,
+        businessUnit: form.businessUnit,
+        businessUnitId: form.businessUnitId,
+        status: "In Progress",
+        user: form.party.name,
+        po: firstAsset.referenceNumber,
+        notes: form.inventoryNotes,
+        requestDate: form.formIssueDate,
+        formIssueDate: form.formIssueDate,
+        party: form.party,
+        assets: form.assets,
+        supportingDocuments: form.supportingDocuments,
+        requestNumber: previewRequestNumber(
           form.businessUnit,
           today(),
           transactions,
         ),
-      approverName: form.approverName,
-      inventoryNotes: form.inventoryNotes,
-      statusHistory: [],
-      inventoryAdjustmentApplied: true,
-      inventoryAdjustedAt: new Date().toISOString(),
-    })
+        approverName: form.approverName,
+        inventoryNotes: form.inventoryNotes,
+        statusHistory: [],
+        inventoryAdjustmentApplied: true,
+        inventoryAdjustedAt: new Date().toISOString(),
+      },
+      attachmentFiles,
+    )
     if (created) {
       setOpen(false)
       setForm(null)
+      setAttachmentFiles([])
       setStep(1)
     } else {
       submittingRef.current = false
@@ -635,17 +633,23 @@ export default function Transactions({
     }
   }
 
-  const openDetails = (transaction: Transaction) => {
-    setSelectedId(transaction.id)
-    setNextStatus(transaction.status)
+  const openDetails = async (transaction: Transaction) => {
+    const loaded = await loadTransactionDetails(
+      transaction.direction,
+      transaction.id,
+    )
+    if (!loaded) return
+    setSelectedId(`${transaction.direction}:${transaction.id}`)
+    setNextStatus(loaded.status)
     setStatusNotes("")
   }
 
-  const saveStatus = () => {
+  const saveStatus = async () => {
     if (!selectedTransaction) return
     if (
-      updateTransactionStatus(
+      await updateTransactionStatus(
         selectedTransaction.id,
+        selectedTransaction.direction,
         nextStatus,
         statusNotes,
       )
@@ -728,8 +732,9 @@ export default function Transactions({
         <StatCard
           label="Status"
           value={`${
-            filtered.filter((transaction) => transaction.status === "In Progress")
-              .length
+            filtered.filter(
+              (transaction) => transaction.status === "In Progress",
+            ).length
           } In Progress`}
           note={`${
             filtered.filter((transaction) => transaction.status === "Completed")
@@ -755,7 +760,10 @@ export default function Transactions({
             setTypeFilter(event.target.value)
             setPage(1)
           }}
-          options={[{ value: "", label: "All transaction types" }, ...typeNames]}
+          options={[
+            { value: "", label: "All transaction types" },
+            ...typeNames,
+          ]}
         />
         <Select
           aria-label="Status"
@@ -764,7 +772,10 @@ export default function Transactions({
             setStatusFilter(event.target.value)
             setPage(1)
           }}
-          options={[{ value: "", label: "All statuses" }, ...transactionStatuses]}
+          options={[
+            { value: "", label: "All statuses" },
+            ...transactionStatuses,
+          ]}
         />
       </div>
 
@@ -779,9 +790,7 @@ export default function Transactions({
                 <th>Total Assets</th>
                 <th>{incoming ? "Goods In Type" : "Goods Out Type"}</th>
                 <th>{incoming ? "Source / User" : "Recipient / User"}</th>
-                <th>
-                  {incoming ? "Destination" : "Destination / Provider"}
-                </th>
+                <th>{incoming ? "Destination" : "Destination / Provider"}</th>
                 <th>Status</th>
                 <th>Action</th>
               </tr>
@@ -790,9 +799,7 @@ export default function Transactions({
               {rows.map((transaction) => (
                 <tr key={transaction.id}>
                   <td>
-                    {formatDate(
-                      transaction.formIssueDate ?? transaction.date,
-                    )}
+                    {formatDate(transaction.formIssueDate ?? transaction.date)}
                   </td>
                   <td>
                     <strong>{transaction.document}</strong>
@@ -854,20 +861,17 @@ export default function Transactions({
         {form && (
           <>
             <div className="stepper">
-              {[
-                "Detail Input",
-                "Asset Details",
-                "Destination",
-                "Review",
-              ].map((label, index) => (
-                <div
-                  className={step >= index + 1 ? "active" : ""}
-                  key={label}
-                >
-                  <i>{index + 1}</i>
-                  <span>{label}</span>
-                </div>
-              ))}
+              {["Detail Input", "Asset Details", "Destination", "Review"].map(
+                (label, index) => (
+                  <div
+                    className={step >= index + 1 ? "active" : ""}
+                    key={label}
+                  >
+                    <i>{index + 1}</i>
+                    <span>{label}</span>
+                  </div>
+                ),
+              )}
             </div>
 
             {formError && (
@@ -879,11 +883,7 @@ export default function Transactions({
 
             {step === 1 && (
               <div className="form-grid transaction-form-grid">
-                <Input
-                  label="Document Number"
-                  value={form.document}
-                  readOnly
-                />
+                <Input label="Document Number" value={form.document} readOnly />
                 <Select
                   label="Business Unit *"
                   value={form.businessUnitId}
@@ -905,7 +905,9 @@ export default function Transactions({
                   }
                 />
                 <Input
-                  label={`${incoming ? "Returner / Contributor" : "Requester"} Name *`}
+                  label={`${
+                    incoming ? "Returner / Contributor" : "Requester"
+                  } Name *`}
                   value={form.party.name}
                   onChange={(event) =>
                     setPartyValue("name", event.target.value)
@@ -914,9 +916,7 @@ export default function Transactions({
                 <Input
                   label="NIK *"
                   value={form.party.nik}
-                  onChange={(event) =>
-                    setPartyValue("nik", event.target.value)
-                  }
+                  onChange={(event) => setPartyValue("nik", event.target.value)}
                 />
                 <Input
                   label="Department *"
@@ -967,10 +967,7 @@ export default function Transactions({
                     variant="secondary"
                     size="sm"
                     onClick={() =>
-                      setFormValue("assets", [
-                        ...form.assets,
-                        emptyAssetRow(),
-                      ])
+                      setFormValue("assets", [...form.assets, emptyAssetRow()])
                     }
                   >
                     <Plus size={15} /> Add asset
@@ -1270,9 +1267,7 @@ export default function Transactions({
                 />
                 <Input
                   label={
-                    incoming
-                      ? "Approver / Receiver Name *"
-                      : "Approver Name *"
+                    incoming ? "Approver / Receiver Name *" : "Approver Name *"
                   }
                   value={form.approverName}
                   onChange={(event) =>
@@ -1283,17 +1278,19 @@ export default function Transactions({
                   label="Supporting Documents"
                   type="file"
                   multiple
-                  onChange={(event) =>
+                  onChange={(event) => {
+                    const files = Array.from(event.target.files ?? [])
+                    setAttachmentFiles(files)
                     setFormValue(
                       "supportingDocuments",
-                      Array.from(event.target.files ?? []).map((file) => ({
+                      files.map((file) => ({
                         id: `FILE-${Date.now()}-${file.name}`,
                         name: file.name,
                         size: file.size,
                         type: file.type,
                       })),
                     )
-                  }
+                  }}
                 />
                 <Textarea
                   label="IT Helpdesk & Inventory Notes"

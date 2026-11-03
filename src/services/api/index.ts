@@ -10,3 +10,4 @@ export {
   masterDataApi,
 } from "./masterData.api"
 export { profileApi } from "./profile.api"
+export { transactionsApi } from "./transactions.api"
