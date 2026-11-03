@@ -32,6 +32,14 @@ const idConfig: Record<MasterKey, {
   statuses: { prefix: "st", field: "id", pattern: /^st\d{4}$/ },
 }
 
+const reusableBusinessIdKeys = new Set<MasterKey>([
+  "categories",
+  "groups",
+  "types",
+  "brands",
+  "models",
+])
+
 const normalize = (value: string) => value.trim().toLocaleLowerCase()
 const historyKey = "iti-master-id-history"
 const deletedBusinessUnitsKey = "iti-deleted-business-units"
@@ -205,7 +213,41 @@ export function reserveMasterId(id: string) {
   localStorage.setItem(historyKey, JSON.stringify([...history]))
 }
 
+function generateReusableBusinessId(items: MasterItem[], key: MasterKey) {
+  const { field, prefix } = idConfig[key]
+  const sequencePattern = new RegExp(`^${prefix}(\\d+)$`, "i")
+  const usedSequences = new Set<number>()
+  const existingIds = new Set<string>()
+
+  for (const item of items) {
+    for (const value of [item[field], item.display_id]) {
+      if (value == null) continue
+      const id = String(value)
+      existingIds.add(id.trim().toLocaleLowerCase())
+      const match = id.trim().match(sequencePattern)
+      if (!match) continue
+      const sequence = Number(match[1])
+      if (Number.isSafeInteger(sequence) && sequence > 0)
+        usedSequences.add(sequence)
+    }
+  }
+
+  let sequence = 1
+  let businessId = `${prefix}${String(sequence).padStart(4, "0")}`
+  while (
+    usedSequences.has(sequence) ||
+    existingIds.has(businessId.toLocaleLowerCase())
+  ) {
+    sequence += 1
+    businessId = `${prefix}${String(sequence).padStart(4, "0")}`
+  }
+  return businessId
+}
+
 export function generateMasterId(items: MasterItem[], key: MasterKey) {
+  if (reusableBusinessIdKeys.has(key))
+    return generateReusableBusinessId(items, key)
+
   const { field, pattern, prefix } = idConfig[key]
   const ids = [
     ...items.map((item) => String(item[field] ?? item.id)),

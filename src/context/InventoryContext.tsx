@@ -1285,7 +1285,6 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         item.category_code ?? item.code,
         item.active !== false,
       )
-      reserveMasterId(businessId)
       reserveMasterInternalId("categories", internalId)
       setMaster((value) => ({
         ...value,
@@ -1405,7 +1404,6 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         item.active !== false,
         item.group_code ?? item.code,
       )
-      reserveMasterId(businessId)
       reserveMasterInternalId("groups", internalId)
       setMaster((value) => ({
         ...value,
@@ -1732,7 +1730,6 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      reserveMasterId(businessId)
       reserveMasterInternalId(key, internalId)
       setMaster((value) => {
         const next = {
@@ -2271,18 +2268,6 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       key === "models"
     if (!classificationKey) reserveMasterId(item.id)
     if (classificationKey) {
-      const field =
-        key === "categories"
-          ? "category_id"
-          : key === "groups"
-            ? "group_id"
-            : key === "types"
-              ? "type_id"
-              : key === "brands"
-                ? "brand_id"
-                : "model_id"
-      const businessId = String(item[field] ?? item.display_id ?? "")
-      reserveMasterId(businessId)
       reserveMasterInternalId(key, item.id)
     }
     setMaster((v) => ({

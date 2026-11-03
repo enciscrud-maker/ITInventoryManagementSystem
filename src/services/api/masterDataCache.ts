@@ -130,3 +130,10 @@ export function getCachedMasterData(
   void request.then(clearInFlight, clearInFlight)
   return request
 }
+
+export function refreshMasterDataSnapshot(
+  scope: string,
+): Promise<ApiResult<MasterDataSnapshot>> {
+  invalidateMasterDataCache()
+  return getCachedMasterData(scope)
+}

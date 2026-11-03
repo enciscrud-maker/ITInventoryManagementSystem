@@ -16,7 +16,11 @@ import {
   brandsApi,
   categoriesApi,
 } from "@/services/api/masterData.api"
-import { invalidateMasterDataCache } from "@/services/api/masterDataCache"
+import {
+  invalidateMasterDataCache,
+  refreshMasterDataSnapshot,
+} from "@/services/api/masterDataCache"
+import { toMasterItems } from "@/services/api/mappers/master-data.mapper"
 import type { ApiResult } from "@/lib/api/types"
 import type { Asset, MasterItem } from "@/data/demoData"
 import ConditionStatusManagement from "./ConditionStatusManagement"
@@ -35,7 +39,6 @@ import {
   resolveCategoryById,
   resolveGroupById,
   resolveTypeById,
-  reserveMasterId,
   reserveMasterInternalId,
   type MasterKey,
   validateCategory,
@@ -75,6 +78,21 @@ const idField: Record<MasterKey, keyof MasterItem> = {
   locations: "location_id",
   conditions: "id",
   statuses: "id",
+}
+
+function withGeneratedBusinessId(
+  key: MasterKey,
+  item: MasterItem,
+  businessId: string,
+  internalId: string,
+): MasterItem {
+  return {
+    ...item,
+    id: internalId,
+    display_id: businessId,
+    [idField[key]]: businessId,
+    ...(key === "models" ? { model_code: businessId } : {}),
+  }
 }
 
 const entityName: Record<MasterKey, string> = {
@@ -411,6 +429,7 @@ export default function MasterData() {
   const key = tabs[tab]
   const isBackendMasterData = backendMasterKeys.has(key)
   const backendReady = masterDataStatus === "ready"
+  const creatingBackendRecord = isBackendMasterData && editing === null
 
   const rows = useMemo(() => {
     const query = search.trim().toLowerCase()
@@ -508,6 +527,11 @@ export default function MasterData() {
   }
 
   const validation = getValidation(key, draft, master, editing ?? undefined)
+  const visibleValidationErrors = creatingBackendRecord
+    ? validation.errors.filter(
+        (error) => error !== `${entityName[key]} ID already exists.`,
+      )
+    : validation.errors
 
   const updateDraft = (updates: Partial<MasterItem>) => {
     setDraft((value) => (value ? { ...value, ...updates } : value))
@@ -701,7 +725,8 @@ export default function MasterData() {
   }
 
   const handleSave = async () => {
-    if (!draft || !validation.valid) return
+    if (!draft) return
+    if (!creatingBackendRecord && !validation.valid) return
     const allowed = editing
       ? canManageExisting(currentUser)
       : canCreateInModule(currentUser, "master-data")
@@ -713,43 +738,99 @@ export default function MasterData() {
       )
       return
     }
-    const relationshipErrors = getRelationshipChangeErrors(
-      key,
-      draft,
-      master,
-      assets,
-      editing ?? undefined,
-    )
-    if (relationshipErrors.length) {
-      notify(relationshipErrors.join(" "))
-      return
-    }
     if (!isBackendMasterData) {
+      const relationshipErrors = getRelationshipChangeErrors(
+        key,
+        draft,
+        master,
+        assets,
+        editing ?? undefined,
+      )
+      if (relationshipErrors.length) {
+        notify(relationshipErrors.join(" "))
+        return
+      }
       if (saveMaster(key, draft)) closeForm()
       return
     }
 
     setSaving(true)
-    const result = await saveBackendMasterRecord(
-      key,
-      draft,
-      editing?.id,
-    )
-    if (!result.success) {
+    const maxAttempts = creatingBackendRecord ? 3 : 1
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      let itemToSave = draft
+      let masterToValidate = master
+
+      if (creatingBackendRecord) {
+        const latest = await refreshMasterDataSnapshot(currentUser.id)
+        if (!latest.success) {
+          notify(latest.error)
+          setSaving(false)
+          return
+        }
+        masterToValidate = { ...master, ...toMasterItems(latest.data) }
+        itemToSave = withGeneratedBusinessId(
+          key,
+          draft,
+          generateMasterId(masterToValidate[key], key),
+          generateMasterInternalId(masterToValidate[key], key),
+        )
+        setDraft(itemToSave)
+
+        const currentValidation = getValidation(
+          key,
+          itemToSave,
+          masterToValidate,
+        )
+        if (!currentValidation.valid) {
+          notify(currentValidation.errors.join(" "))
+          setSaving(false)
+          return
+        }
+      }
+
+      const relationshipErrors = getRelationshipChangeErrors(
+        key,
+        itemToSave,
+        masterToValidate,
+        assets,
+        editing ?? undefined,
+      )
+      if (relationshipErrors.length) {
+        notify(relationshipErrors.join(" "))
+        setSaving(false)
+        return
+      }
+
+      const result = await saveBackendMasterRecord(
+        key,
+        itemToSave,
+        editing?.id,
+      )
+      if (result.success) {
+        invalidateMasterDataCache()
+        const refreshed = await refreshMasterData()
+        notify(
+          refreshed
+            ? `${entityName[key]} ${editing ? "updated" : "created"}.`
+            : `${entityName[key]} ${editing ? "updated" : "created"}, but the list could not be refreshed.`,
+        )
+        closeForm()
+        setSaving(false)
+        return
+      }
+      if (creatingBackendRecord && result.status === 409) {
+        if (attempt + 1 < maxAttempts) continue
+        notify(
+          "Could not allocate a unique ID after multiple conflicts. Please try again.",
+        )
+        setSaving(false)
+        return
+      }
+
       notify(result.error)
       setSaving(false)
       return
     }
-
-    invalidateMasterDataCache()
-    const refreshed = await refreshMasterData()
-    notify(
-      refreshed
-        ? `${entityName[key]} ${editing ? "updated" : "created"}.`
-        : `${entityName[key]} ${editing ? "updated" : "created"}, but the list could not be refreshed.`,
-    )
-    closeForm()
-    setSaving(false)
   }
 
   const handleDelete = async () => {
@@ -786,7 +867,6 @@ export default function MasterData() {
       return
     }
 
-    reserveMasterId(String(deleting.display_id ?? deleting[idField[key]] ?? ""))
     reserveMasterInternalId(key, deleting.id)
     invalidateMasterDataCache()
     const refreshed = await refreshMasterData()
@@ -930,10 +1010,10 @@ export default function MasterData() {
       >
         {draft && (
           <>
-            {validation.errors.length > 0 && (
+            {visibleValidationErrors.length > 0 && (
               <div className="error-summary">
                 <strong>Please review the form</strong>
-                {validation.errors.map((error) => (
+                {visibleValidationErrors.map((error) => (
                   <span key={error}>{error}</span>
                 ))}
               </div>
@@ -960,7 +1040,7 @@ export default function MasterData() {
                 Cancel
               </Button>
               <Button
-                disabled={!validation.valid || saving}
+                disabled={visibleValidationErrors.length > 0 || saving}
                 onClick={() => void handleSave()}
               >
                 {saving ? "Saving..." : "Save Record"}

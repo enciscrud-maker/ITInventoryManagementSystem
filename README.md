@@ -29,8 +29,12 @@ the HTTP-only access token and only allows these resource routes and methods.
 The master-data screen loads all pages for those five resources in parallel.
 The signed-in user's in-memory snapshot is reused for 30 seconds, refreshed
 while the app is open and when the tab regains focus, and evicted after
-successful creates or deletes. The screen currently supports create and delete
-against the backend; the API module does not yet expose update.
+successful creates or deletes. Before creating a record, the screen refreshes
+the persisted records and allocates the smallest unused four-digit business ID;
+deleted IDs can therefore be reused. ID conflicts from simultaneous creates are
+retried against a fresh snapshot, and the backend must enforce uniqueness for
+these IDs to make concurrent allocation atomic. The screen currently supports
+create and delete against the backend; the API module does not yet expose update.
 
 Payload remains in use for CMS administration and the currently existing
 profile, account-management, and password-reset-request endpoints. Those legacy
