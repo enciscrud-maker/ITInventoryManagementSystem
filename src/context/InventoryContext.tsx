@@ -24,7 +24,6 @@ import {
   useState,
 } from "react"
 import {
-  demoAssets,
   demoAudits,
   demoMaster,
   demoTransactions,
@@ -86,6 +85,7 @@ import {
   type MasterDataSnapshot,
 } from "@/services/api/masterDataCache"
 import { toMasterItems } from "@/services/api/mappers/master-data.mapper"
+import { assetsApi } from "@/services/api/assets.api"
 
 type State = {
   assets: Asset[]
@@ -101,6 +101,7 @@ type State = {
   masterDataError: string
   masterDataRefreshing: boolean
   refreshMasterData: () => Promise<boolean>
+  refreshAssets: () => Promise<boolean>
   saveAsset: (asset: Asset) => void
   saveTransaction: (tx: Transaction) => boolean
   updateTransactionStatus: (
@@ -196,7 +197,7 @@ const normalizeTransaction = (transaction: Transaction): Transaction => {
 
 export function InventoryProvider({ children }: { children: React.ReactNode }) {
   const { currentUser } = useAuth()
-  const [assets, setAssets] = useState(() => read("iti-assets", demoAssets))
+  const [assets, setAssets] = useState<Asset[]>([])
   const [transactions, setTransactions] = useState(() =>
     read<Transaction[]>("iti-transactions", demoTransactions).map(
       normalizeTransaction,
@@ -247,9 +248,6 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
   const masterDataLoaded = useRef(false)
   const appliedMasterData = useRef<MasterDataSnapshot | null>(null)
   const masterDataScope = useRef(currentUser.id)
-  useEffect(() => {
-    localStorage.setItem("iti-assets", JSON.stringify(assets))
-  }, [assets])
   useEffect(() => {
     localStorage.setItem("iti-transactions", JSON.stringify(transactions))
   }, [transactions])
@@ -370,10 +368,22 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     localStorage.setItem("iti-sidebar", JSON.stringify(sidebarCollapsed))
   }, [sidebarCollapsed])
-  const notify = (message: string) => {
+  const notify = useCallback((message: string) => {
     setToast(message)
     window.setTimeout(() => setToast(""), 3000)
-  }
+  }, [])
+  const refreshAssets = useCallback(async () => {
+    const result = await assetsApi.list()
+    if (!result.success) {
+      notify(result.error)
+      return false
+    }
+    setAssets(result.data)
+    return true
+  }, [notify])
+  useEffect(() => {
+    void refreshAssets()
+  }, [refreshAssets])
   const refreshMasterData = useCallback(async () => {
     if (masterDataScope.current !== currentUser.id) {
       masterDataScope.current = currentUser.id
@@ -1900,6 +1910,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       masterDataError,
       masterDataRefreshing,
       refreshMasterData,
+      refreshAssets,
       saveAsset,
       saveTransaction,
       updateTransactionStatus,
@@ -1937,6 +1948,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       masterDataError,
       masterDataRefreshing,
       refreshMasterData,
+      refreshAssets,
       saveBusinessUnit,
       saveLocation,
       deleteBusinessUnit,

@@ -12,6 +12,9 @@ export const apiRoutes = {
     models: "/app-api/backend/api/asset-models",
     groups: "/app-api/backend/api/asset-groups",
   },
+  inventory: {
+    assets: "/app-api/backend/api/assets",
+  },
   app: {
     accounts: "/app-api/accounts",
     profile: "/app-api/profile",

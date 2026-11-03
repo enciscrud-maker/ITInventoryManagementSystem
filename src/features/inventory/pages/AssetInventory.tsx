@@ -324,6 +324,7 @@ export default function AssetInventory() {
     assets,
     master,
     businessUnit,
+    refreshAssets,
     setSelectedAsset,
     importAssets,
     notify,
@@ -370,55 +371,25 @@ export default function AssetInventory() {
     "uom",
     "condition",
   ]
-  const selectedCategory = master.categories.find(
-    (item) => item.name === filters.category,
-  )
-  const selectedGroup = master.groups.find(
-    (item) => item.name === filters.group,
-  )
-  const selectedType = master.types.find((item) => item.name === filters.type)
-  const selectedBrand = master.brands.find(
-    (item) => item.name === filters.brand,
-  )
-  const availableGroups = master.groups.filter(
-    (item) =>
-      !selectedCategory ||
-      item.category_id ===
-        (selectedCategory.category_id ?? selectedCategory.id),
-  )
-  const availableTypes = master.types.filter(
-    (item) =>
-      !selectedGroup ||
-      item.group_id === (selectedGroup.group_id ?? selectedGroup.id),
-  )
-  const availableBrands = master.brands.filter(
-    (item) =>
-      !selectedType ||
-      !item.type_id ||
-      item.type_id === (selectedType.type_id ?? selectedType.id),
-  )
-  const availableModels = master.models.filter(
-    (item) =>
-      (!selectedType ||
-        item.type_id === (selectedType.type_id ?? selectedType.id)) &&
-      (!selectedBrand ||
-        item.brand_id === (selectedBrand.brand_id ?? selectedBrand.id)),
-  )
   const uniqueValues = (key: keyof Asset) =>
     Array.from(new Set(assets.map((a) => String(a[key] ?? "")).filter(Boolean)))
   const options: Record<string, string[]> = {
-    category: master.categories.map((x) => x.name),
-    group: availableGroups.map((x) => x.name),
-    type: availableTypes.map((x) => x.name),
-    brand: availableBrands.map((x) => x.name),
-    model: availableModels.map((x) => x.name),
-    businessUnit: master.businessUnits.map((unit) => unit.name),
+    category: uniqueValues("category"),
+    group: uniqueValues("group"),
+    type: uniqueValues("type"),
+    brand: uniqueValues("brand"),
+    model: uniqueValues("model"),
+    businessUnit: uniqueValues("businessUnit"),
     location: Array.from(
       new Set(
-        (businessUnit === "All Business Units"
-          ? master.locations
-          : getLocationsForBusinessUnit(master.locations, businessUnit)
-        ).map((location) => location.name),
+        assets
+          .filter(
+            (asset) =>
+              businessUnit === "All Business Units" ||
+              asset.businessUnitId === businessUnit,
+          )
+          .map((asset) => asset.location)
+          .filter(Boolean),
       ),
     ),
     serial: uniqueValues("serial"),
@@ -659,7 +630,11 @@ export default function AssetInventory() {
         </Button>
         <IconButton
           label="Refresh"
-          onClick={() => notify("Inventory is up to date")}
+          onClick={() =>
+            void refreshAssets().then((refreshed) => {
+              if (refreshed) notify("Inventory is up to date")
+            })
+          }
         >
           <RefreshCw size={17} />
         </IconButton>

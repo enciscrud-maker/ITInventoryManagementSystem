@@ -17,6 +17,7 @@ const masterDataResources = new Set([
   "api/asset-models",
   "api/asset-groups",
 ])
+const assetsReadResource = "api/assets"
 
 const timeoutMs = 10_000
 const cookieOptions = {
@@ -54,6 +55,7 @@ async function proxyAuthRequest(
   const isAuthEndpoint = Object.hasOwn(allowedMethods, endpoint)
   const resource = path.length >= 2 ? path.slice(0, 2).join("/") : ""
   const isMasterDataEndpoint = masterDataResources.has(resource)
+  const isAssetsReadEndpoint = endpoint === assetsReadResource
   const hasResourceId =
     path.length === 3 && /^\d+$/.test(path[2]) && Number(path[2]) > 0
   const allowedMasterDataMethod =
@@ -62,12 +64,13 @@ async function proxyAuthRequest(
       : hasResourceId && ["GET", "DELETE"].includes(request.method)
   const expectedMethod = allowedMethods[endpoint]
 
-  if (!isAuthEndpoint && !isMasterDataEndpoint) {
+  if (!isAuthEndpoint && !isMasterDataEndpoint && !isAssetsReadEndpoint) {
     return NextResponse.json({ error: "Not found." }, { status: 404 })
   }
   if (
     (isAuthEndpoint && request.method !== expectedMethod) ||
-    (isMasterDataEndpoint && !allowedMasterDataMethod)
+    (isMasterDataEndpoint && !allowedMasterDataMethod) ||
+    (isAssetsReadEndpoint && request.method !== "GET")
   ) {
     return NextResponse.json({ error: "Method not allowed." }, { status: 405 })
   }
@@ -95,7 +98,12 @@ async function proxyAuthRequest(
 
   const accessToken = requestCookie(request, accessCookie)
   const refreshToken = requestCookie(request, refreshCookie)
-  if ((endpoint === "api/auth/me" || isMasterDataEndpoint) && !accessToken) {
+  if (
+    (endpoint === "api/auth/me" ||
+      isMasterDataEndpoint ||
+      isAssetsReadEndpoint) &&
+    !accessToken
+  ) {
     return problemResponse(401, "Unauthorized")
   }
   if (endpoint === "api/auth/refresh" && !refreshToken) {
@@ -112,7 +120,12 @@ async function proxyAuthRequest(
     headers.set("content-type", "application/json")
     const origin = request.headers.get("origin")
     if (origin) headers.set("origin", origin)
-    if ((endpoint === "api/auth/me" || isMasterDataEndpoint) && accessToken) {
+    if (
+      (endpoint === "api/auth/me" ||
+        isMasterDataEndpoint ||
+        isAssetsReadEndpoint) &&
+      accessToken
+    ) {
       headers.set("authorization", `Bearer ${accessToken}`)
     }
 
@@ -129,7 +142,7 @@ async function proxyAuthRequest(
     }
 
     const requestUrl = new URL(`/${endpoint}`, `${apiBaseUrl}/`)
-    if (isMasterDataEndpoint) {
+    if (isMasterDataEndpoint || isAssetsReadEndpoint) {
       requestUrl.search = new URL(request.url).search
     }
 

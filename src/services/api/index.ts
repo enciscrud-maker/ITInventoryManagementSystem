@@ -1,3 +1,4 @@
+export { assetsApi } from "./assets.api"
 export { accountsApi } from "./accounts.api"
 export { authApi } from "./auth.api"
 export {
