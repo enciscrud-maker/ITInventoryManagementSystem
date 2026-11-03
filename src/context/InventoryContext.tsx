@@ -50,12 +50,21 @@ import {
   normalizeAssetClassification,
   defaultConditionTagColor,
   generateStatusCode,
+  generateMasterInternalId,
+  getMasterInternalId,
   isValidTagColor,
   reserveDeletedBusinessUnit,
   reserveDeletedLocation,
   reserveMasterId,
+  reserveMasterInternalId,
   resolveCategoryById,
+  resolveBrandById,
+  resolveGroupById,
+  resolveTypeById,
   serializeMasterData,
+  type MasterKey,
+  validateCategory,
+  validateGroup,
 } from "../utils/masterData"
 import { useAuth } from "../auth/AuthContext"
 import {
@@ -134,8 +143,8 @@ type State = {
   setSelectedAsset: (v: Asset | null) => void
   notify: (v: string) => void
   importAssets: (v: Asset[]) => void
-  saveMaster: (key: string, item: MasterItem) => boolean
-  deleteMaster: (key: string, id: string) => boolean
+  saveMaster: (key: MasterKey, item: MasterItem) => boolean
+  deleteMaster: (key: MasterKey, id: string) => boolean
   saveBusinessUnit: (name: string, id?: string) => boolean
   saveLocation: (name: string, businessUnitId: string, id?: string) => boolean
   deleteBusinessUnit: (id: string) => boolean
@@ -1123,7 +1132,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     )
     return true
   }
-  const saveMaster = (key: string, item: MasterItem) => {
+  const saveMaster = (key: MasterKey, item: MasterItem) => {
     const existingRecord = master[key]?.some(
       (candidate) => candidate.id === item.id,
     )
@@ -1247,29 +1256,50 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       return true
     }
     if (key === "categories") {
-      const categoryId = item.category_id ?? item.id
-      const existing = master.categories.find(
-        (candidate) => (candidate.category_id ?? candidate.id) === categoryId,
+      const businessId = String(
+        item.category_id ?? item.display_id ?? item.id,
       )
+      const existing = master.categories.find(
+        (candidate) =>
+          candidate.id === item.id || candidate.category_id === businessId,
+      )
+      const validation = validateCategory(item, master.categories)
+      if (!validation.valid) {
+        notify(validation.errors.join(" "))
+        return false
+      }
+      if (existing && existing.id !== item.id) {
+        notify("Category ID cannot be changed after creation")
+        return false
+      }
+      if (existing && (existing.category_id ?? existing.display_id) !== businessId) {
+        notify("Category ID cannot be changed after creation")
+        return false
+      }
+      const internalId =
+        existing?.id ?? generateMasterInternalId(master.categories, "categories")
       const normalized = createCategoryRecord(
-        categoryId,
+        internalId,
+        businessId,
         item.category_name ?? item.name,
+        item.category_code ?? item.code,
         item.active !== false,
       )
-      reserveMasterId(categoryId)
+      reserveMasterId(businessId)
+      reserveMasterInternalId("categories", internalId)
       setMaster((value) => ({
         ...value,
         categories: value.categories.some(
-          (candidate) => (candidate.category_id ?? candidate.id) === categoryId,
+          (candidate) => candidate.id === internalId,
         )
           ? value.categories.map((candidate) =>
-              (candidate.category_id ?? candidate.id) === categoryId
+              candidate.id === internalId
                 ? normalized
                 : candidate,
             )
           : [normalized, ...value.categories],
         groups: value.groups.map((group) =>
-          group.category_id === categoryId
+          group.category_id === internalId
             ? {
                 ...group,
                 parent: normalized.name,
@@ -1278,6 +1308,27 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
               }
             : group,
         ),
+        types: value.types.map((type) =>
+          type.category_id === internalId
+            ? {
+                ...type,
+                category_name: normalized.name,
+                category_code: normalized.code,
+              }
+            : type,
+        ),
+        models: value.models.map((model) => {
+          if (model.category_id !== internalId) return model
+          const group = value.groups.find((entry) => entry.id === model.group_id)
+          const type = value.types.find((entry) => entry.id === model.type_id)
+          const brand = value.brands.find((entry) => entry.id === model.brand_id)
+          return {
+            ...model,
+            category_name: normalized.name,
+            category_code: normalized.code,
+            asset_id: generateAssetId(normalized, group, type, brand),
+          }
+        }),
       }))
       if (existing && existing.name !== normalized.name) {
         setAssets((value) =>
@@ -1299,7 +1350,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
           actor: currentUser,
           module: "Category",
           action: existing ? "Update" : "Create",
-          recordId: categoryId,
+          recordId: businessId,
           recordLabel: normalized.name,
           changes,
         })
@@ -1308,10 +1359,24 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       return true
     }
     if (key === "groups") {
-      const groupId = item.group_id ?? item.id
+      const businessId = String(item.group_id ?? item.display_id ?? item.id)
       const existing = master.groups.find(
-        (candidate) => (candidate.group_id ?? candidate.id) === groupId,
+        (candidate) =>
+          candidate.id === item.id || candidate.group_id === businessId,
       )
+      const validation = validateGroup(item, master.groups, master.categories)
+      if (!validation.valid) {
+        notify(validation.errors.join(" "))
+        return false
+      }
+      if (existing && existing.id !== item.id) {
+        notify("Group ID cannot be changed after creation")
+        return false
+      }
+      if (existing && (existing.group_id ?? existing.display_id) !== businessId) {
+        notify("Group ID cannot be changed after creation")
+        return false
+      }
       const category = resolveCategoryById(
         master.categories,
         item.category_id ?? "",
@@ -1320,33 +1385,71 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         notify("Cannot save Group: select a valid Category")
         return false
       }
+      if (
+        existing &&
+        existing.category_id !== category.id &&
+        (master.types.some((type) => type.group_id === existing.id) ||
+          master.models.some((model) => model.group_id === existing.id) ||
+          assets.some((asset) => asset.groupId === existing.id))
+      ) {
+        notify("Category cannot change while Types, Models, or Assets reference this Group")
+        return false
+      }
+      const internalId =
+        existing?.id ?? generateMasterInternalId(master.groups, "groups")
       const normalized = createGroupRecord(
-        groupId,
+        internalId,
+        businessId,
         item.group_name ?? item.name,
         category,
         item.active !== false,
         item.group_code ?? item.code,
       )
-      reserveMasterId(groupId)
+      reserveMasterId(businessId)
+      reserveMasterInternalId("groups", internalId)
       setMaster((value) => ({
         ...value,
         groups: value.groups.some(
-          (candidate) => (candidate.group_id ?? candidate.id) === groupId,
+          (candidate) => candidate.id === internalId,
         )
           ? value.groups.map((candidate) =>
-              (candidate.group_id ?? candidate.id) === groupId
+              candidate.id === internalId
                 ? normalized
                 : candidate,
             )
           : [normalized, ...value.groups],
-        types:
-          existing && existing.name !== normalized.name
-            ? value.types.map((type) =>
-                type.parent === existing.name
-                  ? { ...type, parent: normalized.name }
-                  : type,
-              )
-            : value.types,
+        types: value.types.map((type) =>
+          type.group_id === internalId
+            ? {
+                ...type,
+                parent: normalized.name,
+                group_name: normalized.name,
+                group_code: normalized.group_code,
+                category_id: normalized.category_id,
+                category_name: normalized.category_name,
+                category_code: normalized.category_code,
+              }
+            : type,
+        ),
+        models: value.models.map((model) => {
+          if (model.group_id !== internalId) return model
+          const type = value.types.find((entry) => entry.id === model.type_id)
+          const brand = value.brands.find((entry) => entry.id === model.brand_id)
+          return {
+            ...model,
+            group_name: normalized.name,
+            group_code: normalized.group_code,
+            category_id: normalized.category_id,
+            category_name: normalized.category_name,
+            category_code: normalized.category_code,
+            asset_id: generateAssetId(
+              value.categories.find((entry) => entry.id === normalized.category_id),
+              normalized,
+              type,
+              brand,
+            ),
+          }
+        }),
       }))
       if (existing && existing.name !== normalized.name) {
         setAssets((value) =>
@@ -1368,7 +1471,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
           actor: currentUser,
           module: "Group",
           action: existing ? "Update" : "Create",
-          recordId: groupId,
+          recordId: businessId,
           recordLabel: normalized.name,
           changes,
         })
@@ -1376,89 +1479,377 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       notify("Group saved successfully")
       return true
     }
+    if (key === "types" || key === "brands" || key === "models") {
+      const field = {
+        types: "type_id",
+        brands: "brand_id",
+        models: "model_id",
+      }[key] as keyof MasterItem
+      const businessId = String(item[field] ?? item.display_id ?? "")
+      const existing = master[key].find((candidate) => candidate.id === item.id)
+      const internalId =
+        existing?.id ?? generateMasterInternalId(master[key], key)
+      const name = item.name.trim()
+      const code =
+        key === "types"
+          ? item.type_code ?? item.code
+          : key === "brands"
+            ? item.brand_code ?? item.code
+            : item.model_code ?? item.code
+      if (!name) {
+        notify(`${key.slice(0, -1)} name is required`)
+        return false
+      }
+      const businessIdPattern =
+        key === "types"
+          ? /^t\d{4}$/
+          : key === "brands"
+            ? /^b\d{4}$/
+            : /^m\d{4}$/
+      if (!businessIdPattern.test(businessId)) {
+        notify(`${key.slice(0, -1)} ID must use its generated format`)
+        return false
+      }
+      if (
+        master[key].some(
+          (candidate) =>
+            candidate.id !== existing?.id && candidate[field] === businessId,
+        )
+      ) {
+        notify(`${key.slice(0, -1)} ID already exists`)
+        return false
+      }
+      if (existing && existing[field] !== businessId) {
+        notify(`${key.slice(0, -1)} ID cannot be changed after creation`)
+        return false
+      }
+      if (
+        master[key].some(
+          (candidate) =>
+            candidate.id !== existing?.id &&
+            candidate.name.trim().toLocaleLowerCase() ===
+              name.toLocaleLowerCase(),
+        )
+      ) {
+        notify(`${key.slice(0, -1)} name already exists`)
+        return false
+      }
+
+      let normalized: MasterItem
+      if (key === "types") {
+        const group = resolveGroupById(master.groups, String(item.group_id ?? ""))
+        const category = group
+          ? resolveCategoryById(
+              master.categories,
+              String(group.category_id ?? ""),
+            )
+          : undefined
+        if (!group || !category || item.category_id !== category.id) {
+          notify("Cannot save Type: select a Group belonging to its Category")
+          return false
+        }
+        if (
+          existing &&
+          existing.group_id !== group.id &&
+          (master.models.some((model) => model.type_id === existing.id) ||
+            assets.some((asset) => asset.typeId === existing.id))
+        ) {
+          notify("Group cannot change while Models or Assets reference this Type")
+          return false
+        }
+        if (!code?.trim()) {
+          notify("Type code is required")
+          return false
+        }
+        if (
+          master.types.some(
+            (candidate) =>
+              candidate.id !== existing?.id &&
+              (candidate.type_id === businessId ||
+                candidate.code.toLocaleLowerCase() === code.toLocaleLowerCase()),
+          )
+        ) {
+          notify("Type ID or code already exists")
+          return false
+        }
+        normalized = {
+          ...item,
+          id: internalId,
+          display_id: businessId,
+          type_id: businessId,
+          name,
+          code,
+          type_name: name,
+          type_code: code,
+          group_id: group.id,
+          group_name: group.name,
+          group_code: group.group_code ?? group.code,
+          category_id: category.id,
+          category_display_id: category.display_id ?? category.category_id,
+          category_name: category.name,
+          category_code: category.category_code ?? category.code,
+          parent: group.name,
+        }
+      } else if (key === "brands") {
+        const type = item.type_id
+          ? resolveTypeById(master.types, item.type_id)
+          : undefined
+        if (item.type_id && !type) {
+          notify("Cannot save Brand: select a valid Type or leave it empty")
+          return false
+        }
+        if (!code?.trim()) {
+          notify("Brand code is required")
+          return false
+        }
+        if (
+          master.brands.some(
+            (candidate) =>
+              candidate.id !== existing?.id &&
+              (candidate.brand_id === businessId ||
+                candidate.code.toLocaleLowerCase() === code.toLocaleLowerCase()),
+          )
+        ) {
+          notify("Brand ID or code already exists")
+          return false
+        }
+        if (
+          existing &&
+          existing.type_id !== type?.id &&
+          master.models.some(
+            (model) =>
+              model.brand_id === existing.id &&
+              type?.id &&
+              model.type_id !== type.id,
+          )
+        ) {
+          notify("Brand Type cannot change while linked Models use another Type")
+          return false
+        }
+        if (
+          existing &&
+          existing.type_id !== type?.id &&
+          assets.some(
+            (asset) =>
+              asset.brandId === existing.id &&
+              type?.id &&
+              asset.typeId !== type.id,
+          )
+        ) {
+          notify("Brand Type cannot change while linked Assets use another Type")
+          return false
+        }
+        normalized = {
+          ...item,
+          id: internalId,
+          display_id: businessId,
+          brand_id: businessId,
+          name,
+          code,
+          brand_name: name,
+          brand_code: code,
+          type_id: type?.id ?? "",
+          type_name: type?.name ?? "",
+          type_code: type?.type_code ?? type?.code ?? "",
+          type_display_id: type?.display_id ?? "",
+          parent: type?.name ?? "",
+        }
+      } else {
+        const type = resolveTypeById(master.types, String(item.type_id ?? ""))
+        const group = type
+          ? resolveGroupById(master.groups, String(type.group_id ?? ""))
+          : undefined
+        const category = group
+          ? resolveCategoryById(
+              master.categories,
+              String(group.category_id ?? ""),
+            )
+          : undefined
+        const brand = resolveBrandById(master.brands, String(item.brand_id ?? ""))
+        const assetId = generateAssetId(category, group, type, brand)
+        if (
+          !category ||
+          !group ||
+          !type ||
+          !brand ||
+          item.category_id !== category.id ||
+          item.group_id !== group.id ||
+          (brand.type_id && brand.type_id !== type.id)
+        ) {
+          notify("Cannot save Model: the selected classification relationships are inconsistent")
+          return false
+        }
+        if (!assetId) {
+          notify("Cannot save Model: all classification codes are required")
+          return false
+        }
+        if (
+          existing &&
+          assets.some(
+            (asset) =>
+              asset.modelId === existing.id &&
+              (existing.category_id !== category.id ||
+                existing.group_id !== group.id ||
+                existing.type_id !== type.id ||
+                existing.brand_id !== brand.id),
+          )
+        ) {
+          notify("Model classification cannot change while Assets reference it")
+          return false
+        }
+        if (
+          assetId !== existing?.asset_id &&
+          master.models.some(
+            (candidate) =>
+              candidate.id !== existing?.id && candidate.asset_id === assetId,
+          )
+        ) {
+          notify("Generated Asset ID already exists")
+          return false
+        }
+        normalized = {
+          ...item,
+          id: internalId,
+          display_id: businessId,
+          model_id: businessId,
+          name,
+          model_name: name,
+          model_code: businessId,
+          asset_id: assetId,
+          category_id: category.id,
+          category_name: category.name,
+          category_code: category.category_code ?? category.code,
+          group_id: group.id,
+          group_name: group.name,
+          group_code: group.group_code ?? group.code,
+          type_id: type.id,
+          type_name: type.name,
+          type_code: type.type_code ?? type.code,
+          brand_id: brand.id,
+          brand_name: brand.name,
+          brand_code: brand.brand_code ?? brand.code,
+          parent: brand.name,
+        }
+      }
+
+      reserveMasterId(businessId)
+      reserveMasterInternalId(key, internalId)
+      setMaster((value) => {
+        const next = {
+          ...value,
+          [key]: value[key].some((candidate) => candidate.id === internalId)
+            ? value[key].map((candidate) =>
+                candidate.id === internalId ? normalized : candidate,
+              )
+            : [normalized, ...value[key]],
+        }
+        if (key === "types") {
+          next.brands = value.brands.map((brand) =>
+            brand.type_id === internalId
+              ? {
+                  ...brand,
+                  type_name: normalized.name,
+                  type_code: normalized.type_code,
+                  parent: normalized.name,
+                }
+              : brand,
+          )
+          next.models = value.models.map((model) => {
+            if (model.type_id !== internalId) return model
+            const group = value.groups.find(
+              (entry) => entry.id === normalized.group_id,
+            )
+            const category = value.categories.find(
+              (entry) => entry.id === normalized.category_id,
+            )
+            const brand = value.brands.find(
+              (entry) => entry.id === model.brand_id,
+            )
+            return {
+              ...model,
+              type_name: normalized.name,
+              type_code: normalized.type_code,
+              group_id: normalized.group_id,
+              group_name: group?.name ?? "",
+              group_code: group?.group_code ?? group?.code ?? "",
+              category_id: normalized.category_id,
+              category_name: category?.name ?? "",
+              category_code: category?.category_code ?? category?.code ?? "",
+              asset_id: generateAssetId(category, group, normalized, brand),
+            }
+          })
+        }
+        if (key === "brands") {
+          next.models = value.models.map((model) =>
+            model.brand_id === internalId
+              ? {
+                  ...model,
+                  brand_name: normalized.name,
+                  brand_code: normalized.brand_code,
+                  asset_id: generateAssetId(
+                    value.categories.find(
+                      (entry) => entry.id === model.category_id,
+                    ),
+                    value.groups.find((entry) => entry.id === model.group_id),
+                    value.types.find((entry) => entry.id === model.type_id),
+                    normalized,
+                  ),
+                }
+              : model,
+          )
+        }
+        return next
+      })
+      if (existing && existing.name !== normalized.name)
+        setAssets((value) =>
+          value.map((asset) =>
+            key === "types" && asset.typeId === internalId
+              ? { ...asset, type: normalized.name }
+              : key === "brands" && asset.brandId === internalId
+                ? { ...asset, brand: normalized.name }
+                : key === "models" && asset.modelId === internalId
+                  ? { ...asset, model: normalized.name }
+                  : asset,
+          ),
+        )
+      const changes = existing
+        ? summarizeChanges(
+            existing as unknown as Record<string, unknown>,
+            normalized as unknown as Record<string, unknown>,
+          )
+        : undefined
+      if (!existing || Object.keys(changes ?? {}).length)
+        recordDataActivity({
+          actor: currentUser,
+          module: key === "types" ? "Type" : key === "brands" ? "Brand" : "Model",
+          action: existing ? "Update" : "Create",
+          recordId: businessId,
+          recordLabel: name,
+          changes,
+        })
+      notify(`${key.slice(0, -1)} saved`)
+      return true
+    }
+
     const existing = master[key].find((candidate) => candidate.id === item.id)
     reserveMasterId(item.id)
-    setMaster((value) => {
-      const next = {
-        ...value,
-        [key]: value[key].some((candidate) => candidate.id === item.id)
-          ? value[key].map((candidate) =>
-              candidate.id === item.id ? item : candidate,
-            )
-          : [item, ...value[key]],
-      }
-      if (key === "types") {
-        next.brands = value.brands.map((brand) =>
-          brand.type_id === item.type_id
-            ? { ...brand, parent: item.name, type_name: item.name }
-            : brand,
-        )
-        next.models = value.models.map((model) =>
-          model.type_id === item.type_id
-            ? {
-                ...model,
-                type_name: item.name,
-                type_code: item.type_code ?? item.code,
-                group_id: item.group_id,
-                group_name: item.group_name,
-                group_code: item.group_code,
-                category_id: item.category_id,
-                category_name: item.category_name,
-                category_code: item.category_code,
-                asset_id: generateAssetId(
-                  { ...model, category_code: item.category_code },
-                  item,
-                  item,
-                  value.brands.find(
-                    (brand) => brand.brand_id === model.brand_id,
-                  ),
-                ),
-              }
-            : model,
-        )
-      }
-      if (key === "brands") {
-        next.models = value.models.map((model) =>
-          model.brand_id === item.brand_id
-            ? {
-                ...model,
-                parent: item.name,
-                brand_name: item.name,
-                brand_code: item.brand_code ?? item.code,
-                asset_id: generateAssetId(model, model, model, item),
-              }
-            : model,
-        )
-      }
-      return next
-    })
+    setMaster((value) => ({
+      ...value,
+      [key]: value[key].some((candidate) => candidate.id === item.id)
+        ? value[key].map((candidate) =>
+            candidate.id === item.id ? item : candidate,
+          )
+        : [item, ...value[key]],
+    }))
     if (existing && existing.name !== item.name) {
       setAssets((value) =>
         value.map((asset) =>
-          key === "types" && asset.type === existing.name
-            ? { ...asset, type: item.name }
-            : key === "brands" && asset.brand === existing.name
-              ? { ...asset, brand: item.name }
-              : key === "models" && asset.model === existing.name
-                ? { ...asset, model: item.name }
-                : key === "locations" && asset.location === existing.name
-                  ? { ...asset, location: item.name }
-                  : key === "conditions" && asset.condition === existing.name
-                    ? { ...asset, condition: item.name }
-                    : asset,
+          asset.location === existing.name
+            ? { ...asset, location: item.name }
+            : asset,
         ),
       )
     }
-    const moduleName =
-      key === "types"
-        ? "Type"
-        : key === "brands"
-          ? "Brand"
-          : key === "models"
-            ? "Model"
-            : key === "locations"
-              ? "Location"
-              : "Condition"
     const changes = existing
       ? summarizeChanges(
           existing as unknown as Record<string, unknown>,
@@ -1468,7 +1859,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     if (!existing || Object.keys(changes ?? {}).length) {
       recordDataActivity({
         actor: currentUser,
-        module: moduleName,
+        module: "Location",
         action: existing ? "Update" : "Create",
         recordId: item.id,
         recordLabel: item.name,
@@ -1775,7 +2166,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     notify("Location deleted")
     return true
   }
-  const deleteMaster = (key: string, id: string) => {
+  const deleteMaster = (key: MasterKey, id: string) => {
     if (!canDelete(currentUser)) {
       notify("Hanya Admin yang dapat melakukan penghapusan data.")
       return false
@@ -1816,11 +2207,26 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       )
     const categoryInUse =
       key === "categories" &&
-      master.groups.some((group) => group.category_id === item.category_id)
+      (master.groups.some((group) => group.category_id === item.id) ||
+        master.types.some((type) => type.category_id === item.id) ||
+        master.models.some((model) => model.category_id === item.id) ||
+        assets.some((asset) => asset.categoryId === item.id))
     const groupInUse =
       key === "groups" &&
-      (master.types.some((type) => type.parent === item.name) ||
-        assets.some((asset) => asset.group === item.name))
+      (master.types.some((type) => type.group_id === item.id) ||
+        master.models.some((model) => model.group_id === item.id) ||
+        assets.some((asset) => asset.groupId === item.id))
+    const typeInUse =
+      key === "types" &&
+      (master.brands.some((brand) => brand.type_id === item.id) ||
+        master.models.some((model) => model.type_id === item.id) ||
+        assets.some((asset) => asset.typeId === item.id))
+    const brandInUse =
+      key === "brands" &&
+      (master.models.some((model) => model.brand_id === item.id) ||
+        assets.some((asset) => asset.brandId === item.id))
+    const modelInUse =
+      key === "models" && assets.some((asset) => asset.modelId === item.id)
     const genericMasterUse =
       key !== "conditions" &&
       key !== "statuses" &&
@@ -1833,6 +2239,9 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       statusInUse ||
       categoryInUse ||
       groupInUse ||
+      typeInUse ||
+      brandInUse ||
+      modelInUse ||
       genericMasterUse
     if (used) {
       notify(
@@ -1840,6 +2249,12 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
           ? "Cannot delete Category: reassign its Groups and Assets first"
           : key === "groups"
             ? "Cannot delete Group: reassign its Types and Assets first"
+            : key === "types"
+              ? "Cannot delete Type: it is still referenced by Brands, Models, or Assets"
+              : key === "brands"
+                ? "Cannot delete Brand: it is still referenced by Models or Assets"
+                : key === "models"
+                  ? "Cannot delete Model: it is still referenced by Assets"
             : key === "conditions"
               ? "Cannot delete Condition: it is still referenced by assets or transactions"
               : key === "statuses"
@@ -1848,14 +2263,36 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       )
       return false
     }
-    reserveMasterId(item.id)
+    const classificationKey =
+      key === "categories" ||
+      key === "groups" ||
+      key === "types" ||
+      key === "brands" ||
+      key === "models"
+    if (!classificationKey) reserveMasterId(item.id)
+    if (classificationKey) {
+      const field =
+        key === "categories"
+          ? "category_id"
+          : key === "groups"
+            ? "group_id"
+            : key === "types"
+              ? "type_id"
+              : key === "brands"
+                ? "brand_id"
+                : "model_id"
+      const businessId = String(item[field] ?? item.display_id ?? "")
+      reserveMasterId(businessId)
+      reserveMasterInternalId(key, item.id)
+    }
     setMaster((v) => ({
       ...v,
-      [key]: v[key].filter(
-        (candidate) =>
-          candidate.id !== id &&
-          candidate.category_id !== id &&
-          candidate.group_id !== id,
+      [key]: v[key].filter((candidate) =>
+        classificationKey
+          ? candidate.id !== id
+          : candidate.id !== id &&
+            candidate.category_id !== id &&
+            candidate.group_id !== id,
       ),
     }))
     recordDataActivity({

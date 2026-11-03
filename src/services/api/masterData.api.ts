@@ -119,6 +119,7 @@ TCreate,> = {
   getAll: (query?: MasterDataQuery) => Promise<ApiResult<MasterDataPage<TDto>>>
   getById: (id: number | string) => Promise<ApiResult<TDto>>
   create: (input: TCreate) => Promise<ApiResult<TDto>>
+  update: (id: number | string, input: TCreate) => Promise<ApiResult<TDto>>
   destroy: (id: number | string) => Promise<ApiResult<void>>
 }
 
@@ -186,6 +187,18 @@ function createResourceApi<TDto, TCreate>(
         },
         requestOptions,
       ),
+    update: (id, input) => {
+      const normalizedId = normalizeId(id)
+      if (normalizedId === null) return Promise.resolve(invalidId())
+      return httpRequest<TDto>(
+        `${route}/${normalizedId}`,
+        {
+          method: "PUT",
+          body: JSON.stringify(input),
+        },
+        requestOptions,
+      )
+    },
     destroy: (id) => {
       const normalizedId = normalizeId(id)
       if (normalizedId === null) return Promise.resolve(invalidId())

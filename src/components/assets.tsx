@@ -23,7 +23,7 @@ import {
 } from "../utils/helpers"
 import {
   getLocationsForBusinessUnit,
-  getMasterItemId,
+  getMasterInternalId,
   isAssetClassificationValid,
   normalizeAssetClassification,
 } from "../utils/masterData"
@@ -101,12 +101,7 @@ export function AssetForm({
     (brand) =>
       !form.typeId ||
       !brand.type_id ||
-      brand.type_id === form.typeId ||
-      master.models.some(
-        (model) =>
-          model.brand_id === getMasterItemId(brand, "brand_id") &&
-          model.type_id === form.typeId,
-      ),
+      brand.type_id === form.typeId,
   )
   const models = master.models.filter(
     (x) =>
@@ -116,13 +111,7 @@ export function AssetForm({
   const findItem = (
     key: "categories" | "groups" | "types" | "brands" | "models",
     id: string,
-    idField:
-      | "category_id"
-      | "group_id"
-      | "type_id"
-      | "brand_id"
-      | "model_id",
-  ) => master[key].find((item) => getMasterItemId(item, idField) === id)
+  ) => master[key].find((item) => getMasterInternalId(item) === id)
   const preview = asset?.id || generateAssetId(form, master, assets)
   const close = () => {
     if (!dirty || window.confirm("Discard unsaved changes?")) onClose()
@@ -191,11 +180,7 @@ export function AssetForm({
               label="Category *"
               value={form.categoryId}
               onChange={(e) => {
-                const category = findItem(
-                  "categories",
-                  e.target.value,
-                  "category_id",
-                )
+                const category = findItem("categories", e.target.value)
                 setForm({
                   ...form,
                   categoryId: e.target.value,
@@ -214,7 +199,7 @@ export function AssetForm({
               options={[
                 { value: "", label: "Select category" },
                 ...master.categories.map((x) => ({
-                  value: getMasterItemId(x, "category_id"),
+                  value: getMasterInternalId(x),
                   label: x.name,
                 })),
               ]}
@@ -223,7 +208,7 @@ export function AssetForm({
               label="Group *"
               value={form.groupId}
               onChange={(e) => {
-                const group = findItem("groups", e.target.value, "group_id")
+                const group = findItem("groups", e.target.value)
                 setForm({
                   ...form,
                   groupId: e.target.value,
@@ -240,7 +225,7 @@ export function AssetForm({
               options={[
                 { value: "", label: "Select group" },
                 ...groups.map((x) => ({
-                  value: getMasterItemId(x, "group_id"),
+                  value: getMasterInternalId(x),
                   label: x.name,
                 })),
               ]}
@@ -249,12 +234,8 @@ export function AssetForm({
               label="Type *"
               value={form.typeId}
               onChange={(e) => {
-                const type = findItem("types", e.target.value, "type_id")
-                const brand = findItem(
-                  "brands",
-                  form.brandId ?? "",
-                  "brand_id",
-                )
+                const type = findItem("types", e.target.value)
+                const brand = findItem("brands", form.brandId ?? "")
                 const keepBrand =
                   !brand?.type_id || brand.type_id === e.target.value
                 setForm({
@@ -271,7 +252,7 @@ export function AssetForm({
               options={[
                 { value: "", label: "Select type" },
                 ...types.map((x) => ({
-                  value: getMasterItemId(x, "type_id"),
+                  value: getMasterInternalId(x),
                   label: x.name,
                 })),
               ]}
@@ -281,7 +262,7 @@ export function AssetForm({
               value={form.brandId ?? ""}
               onChange={(event) => {
                 const brandId = event.target.value
-                const brand = findItem("brands", brandId, "brand_id")
+                const brand = findItem("brands", brandId)
                 setForm({
                   ...form,
                   brandId,
@@ -294,7 +275,7 @@ export function AssetForm({
               options={[
                 { value: "", label: "Select brand" },
                 ...brands.map((x) => ({
-                  value: getMasterItemId(x, "brand_id"),
+                  value: getMasterInternalId(x),
                   label: x.name,
                 })),
               ]}
@@ -304,7 +285,7 @@ export function AssetForm({
               value={form.modelId ?? ""}
               onChange={(event) => {
                 const modelId = event.target.value
-                const model = findItem("models", modelId, "model_id")
+                const model = findItem("models", modelId)
                 setForm(
                   normalizeAssetClassification(
                     {
@@ -328,7 +309,7 @@ export function AssetForm({
               options={[
                 { value: "", label: "Select model" },
                 ...models.map((x) => ({
-                  value: getMasterItemId(x, "model_id"),
+                  value: getMasterInternalId(x),
                   label: x.name,
                 })),
               ]}

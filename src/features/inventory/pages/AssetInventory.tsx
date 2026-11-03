@@ -23,7 +23,10 @@ import {
 import type { Asset, MasterItem } from "@/data/demoData"
 import ConditionBadge from "@/components/ConditionBadge"
 import { downloadCsv, today } from "@/utils/helpers"
-import { getLocationsForBusinessUnit } from "@/utils/masterData"
+import {
+  getLocationsForBusinessUnit,
+  getMasterInternalId,
+} from "@/utils/masterData"
 import { AssetForm } from "@/components/assets"
 import {
   Badge,
@@ -249,17 +252,17 @@ const mapImportRow = ({
     category &&
     group &&
     group.category_id &&
-    group.category_id !== (category.category_id ?? category.id)
+    group.category_id !== getMasterInternalId(category)
   )
     errors.push("group does not belong to the selected category")
   if (
     group &&
     type &&
     type.group_id &&
-    type.group_id !== (group.group_id ?? group.id)
+    type.group_id !== getMasterInternalId(group)
   )
     errors.push("type does not belong to the selected group")
-  if (type && brand?.type_id && brand.type_id !== (type.type_id ?? type.id))
+  if (type && brand?.type_id && brand.type_id !== getMasterInternalId(type))
     errors.push("brand does not belong to the selected type")
   if (assetStatus && !condition)
     errors.push(`unsupported asset_status "${assetStatus}"`)
@@ -294,10 +297,10 @@ const mapImportRow = ({
       id: prefix,
       serial: `IMP-${prefix}`,
       tag: prefix,
-      categoryId: category.category_id ?? category.id,
-      groupId: group.group_id ?? group.id,
-      typeId: type.type_id ?? type.id,
-      brandId: brand.brand_id ?? brand.id,
+      categoryId: getMasterInternalId(category),
+      groupId: getMasterInternalId(group),
+      typeId: getMasterInternalId(type),
+      brandId: getMasterInternalId(brand),
       category: category.name,
       group: group.name,
       type: type.name,
@@ -371,6 +374,39 @@ export default function AssetInventory() {
     "uom",
     "condition",
   ]
+  const selectedCategory = master.categories.find(
+    (item) => item.name === filters.category,
+  )
+  const selectedGroup = master.groups.find(
+    (item) => item.name === filters.group,
+  )
+  const selectedType = master.types.find((item) => item.name === filters.type)
+  const selectedBrand = master.brands.find(
+    (item) => item.name === filters.brand,
+  )
+  const availableGroups = master.groups.filter(
+    (item) =>
+      !selectedCategory ||
+      item.category_id === getMasterInternalId(selectedCategory),
+  )
+  const availableTypes = master.types.filter(
+    (item) =>
+      !selectedGroup ||
+      item.group_id === getMasterInternalId(selectedGroup),
+  )
+  const availableBrands = master.brands.filter(
+    (item) =>
+      !selectedType ||
+      !item.type_id ||
+      item.type_id === getMasterInternalId(selectedType),
+  )
+  const availableModels = master.models.filter(
+    (item) =>
+      (!selectedType ||
+      item.type_id === getMasterInternalId(selectedType)) &&
+      (!selectedBrand ||
+      item.brand_id === getMasterInternalId(selectedBrand)),
+  )
   const uniqueValues = (key: keyof Asset) =>
     Array.from(new Set(assets.map((a) => String(a[key] ?? "")).filter(Boolean)))
   const options: Record<string, string[]> = {
@@ -425,7 +461,8 @@ export default function AssetInventory() {
         const brand = master.brands.find((item) => item.name === current.brand)
         const type = master.types.find((item) => item.name === value)
         const keepBrand =
-          !brand?.type_id || brand.type_id === (type?.type_id ?? type?.id)
+          !brand?.type_id ||
+          brand.type_id === (type ? getMasterInternalId(type) : "")
         return {
           ...current,
           type: value,
