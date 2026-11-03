@@ -6,7 +6,10 @@ import { useInventory } from "@/context/InventoryContext"
 import { useAuth } from "@/auth/AuthContext"
 import { canCreateInModule } from "@/services/authorizationService"
 import { downloadCsv, formatDate } from "@/utils/helpers"
-import { getLocationsForBusinessUnit } from "@/utils/masterData"
+import {
+  getLocationsForBusinessUnit,
+  getMasterInternalId,
+} from "@/utils/masterData"
 import ConditionBadge from "@/components/ConditionBadge"
 import {
   Badge,
@@ -61,18 +64,18 @@ export default function Reports() {
   const reportGroups = master.groups.filter(
     (item) =>
       !selectedCategory ||
-      item.category_id === (selectedCategory.category_id ?? selectedCategory.id),
+      item.category_id === getMasterInternalId(selectedCategory),
   )
   const reportTypes = master.types.filter(
     (item) =>
       !selectedGroup ||
-      item.group_id === (selectedGroup.group_id ?? selectedGroup.id),
+      item.group_id === getMasterInternalId(selectedGroup),
   )
   const reportBrands = master.brands.filter(
     (item) =>
       !selectedType ||
       !item.type_id ||
-      item.type_id === (selectedType.type_id ?? selectedType.id),
+      item.type_id === getMasterInternalId(selectedType),
   )
   const setClassificationFilter = (
     key: "category" | "group" | "type" | "brand",
@@ -96,7 +99,7 @@ export default function Reports() {
         const type = master.types.find((item) => item.name === value)
         const keepBrand =
           !brand?.type_id ||
-          brand.type_id === (type?.type_id ?? type?.id)
+          brand.type_id === (type ? getMasterInternalId(type) : "")
         return {
           ...current,
           type: value,

@@ -71,10 +71,42 @@ export function defaultConditionTagColor(condition: string) {
 }
 
 export function serializeMasterData(master: Record<string, MasterItem[]>) {
+  const numericId = (id: string | undefined) =>
+    id && /^\d+$/.test(id) ? Number(id) : null
   return Object.fromEntries(
     Object.entries(master).map(([key, records]) => [
       key,
-      key === "conditions"
+      key === "categories"
+        ? records.map((item) => ({ ...item, id: Number(item.id) }))
+        : key === "groups"
+          ? records.map((item) => ({
+              ...item,
+              id: Number(item.id),
+              category_id: numericId(item.category_id),
+            }))
+          : key === "types"
+            ? records.map((item) => ({
+                ...item,
+                id: Number(item.id),
+                category_id: numericId(item.category_id),
+                group_id: numericId(item.group_id),
+              }))
+            : key === "brands"
+              ? records.map((item) => ({
+                  ...item,
+                  id: Number(item.id),
+                  type_id: numericId(item.type_id),
+                }))
+              : key === "models"
+                ? records.map((item) => ({
+                    ...item,
+                    id: Number(item.id),
+                    category_id: numericId(item.category_id),
+                    group_id: numericId(item.group_id),
+                    type_id: numericId(item.type_id),
+                    brand_id: numericId(item.brand_id),
+                  }))
+                : key === "conditions"
         ? records.map((item) => ({
             id: item.id,
             condition: item.name,
@@ -90,6 +122,49 @@ export function serializeMasterData(master: Record<string, MasterItem[]>) {
           : records,
     ]),
   )
+}
+
+export function getMasterInternalId(item: MasterItem | undefined) {
+  return String(item?.id ?? "")
+}
+
+const internalHistoryKey = "iti-classification-internal-id-history"
+
+function internalIdHistory(key: MasterKey) {
+  if (typeof localStorage === "undefined") return [] as string[]
+  try {
+    const stored = JSON.parse(localStorage.getItem(internalHistoryKey) ?? "{}")
+    const ids = stored?.[key]
+    return Array.isArray(ids)
+      ? ids.filter((id: unknown) => typeof id === "string")
+      : []
+  } catch {
+    return []
+  }
+}
+
+export function reserveMasterInternalId(key: MasterKey, id: string) {
+  if (typeof localStorage === "undefined") return
+  let stored: Record<string, string[]> = {}
+  try {
+    const parsed: unknown = JSON.parse(
+      localStorage.getItem(internalHistoryKey) ?? "{}",
+    )
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed))
+      stored = parsed as Record<string, string[]>
+  } catch {
+    stored = {}
+  }
+  stored[key] = [...new Set([...(stored[key] ?? []), id])]
+  localStorage.setItem(internalHistoryKey, JSON.stringify(stored))
+}
+
+export function generateMasterInternalId(items: MasterItem[], key: MasterKey) {
+  const max = [...items.map((item) => String(item.id)), ...internalIdHistory(key)]
+    .map(Number)
+    .filter((id) => Number.isSafeInteger(id) && id > 0)
+    .reduce((current, id) => Math.max(current, id), 0)
+  return String(max + 1)
 }
 
 function idHistory() {
@@ -158,6 +233,7 @@ export const generateGroupCode = (name: string) => {
     words.length > 1 ? `${words[0][0]}${words[1][0]}` : words[0].slice(0, 2)
   ).toUpperCase()
 }
+export const generateClassificationCode = generateGroupCode
 export const generateBusinessUnitCode = (name: string) =>
   name
     .trim()
@@ -218,26 +294,39 @@ export function resolveCategoryById(
   categories: MasterItem[],
   categoryId: string,
 ) {
-  return categories.find((item) => (item.category_id ?? item.id) === categoryId)
+  return categories.find(
+    (item) =>
+      item.id === categoryId ||
+      item.category_id === categoryId ||
+      item.display_id === categoryId,
+  )
 }
 
 export function resolveGroupById(groups: MasterItem[], groupId: string) {
-  return groups.find((item) => (item.group_id ?? item.id) === groupId)
+  return groups.find(
+    (item) =>
+      item.id === groupId ||
+      item.group_id === groupId ||
+      item.display_id === groupId,
+  )
 }
 
 export function resolveTypeById(types: MasterItem[], typeId: string) {
-  return types.find((item) => (item.type_id ?? item.id) === typeId)
+  return types.find(
+    (item) =>
+      item.id === typeId ||
+      item.type_id === typeId ||
+      item.display_id === typeId,
+  )
 }
 
 export function resolveBrandById(brands: MasterItem[], brandId: string) {
-  return brands.find((item) => (item.brand_id ?? item.id) === brandId)
-}
-
-export function getMasterItemId(
-  item: MasterItem | undefined,
-  field: keyof MasterItem,
-) {
-  return String(item?.[field] ?? item?.id ?? "")
+  return brands.find(
+    (item) =>
+      item.id === brandId ||
+      item.brand_id === brandId ||
+      item.display_id === brandId,
+  )
 }
 
 function resolveMasterReference(
@@ -249,16 +338,20 @@ function resolveMasterReference(
   const targetId = normalize(id ?? "")
   const targetName = normalize(name ?? "")
   const nameField = `${String(idField).replace(/_id$/, "")}_name` as keyof MasterItem
+  const byId = items.find(
+    (item) =>
+      targetId &&
+      [item[idField], item.id].some(
+        (value) => normalize(String(value ?? "")) === targetId,
+      ),
+  )
+  if (byId) return byId
   return items.find(
     (item) =>
-      (targetId &&
-        [item[idField], item.id].some(
-          (value) => normalize(String(value ?? "")) === targetId,
-        )) ||
-      (targetName &&
-        [item[nameField], item.name].some(
-          (value) => normalize(String(value ?? "")) === targetName,
-        )),
+      targetName &&
+      [item[nameField], item.name].some(
+        (value) => normalize(String(value ?? "")) === targetName,
+      ),
   )
 }
 
@@ -276,14 +369,26 @@ export function normalizeAssetClassification<T extends Partial<Asset>>(
   const modelCandidates = models.filter(
     (item) => normalize(item.name) === normalize(asset.model ?? ""),
   )
+  const assetBrand = resolveMasterReference(
+    master.brands ?? [],
+    asset.brandId ?? modelById?.brand_id,
+    asset.brand ?? modelById?.brand_name,
+    "brand_id",
+  )
+  const assetType = resolveMasterReference(
+    master.types ?? [],
+    asset.typeId ?? modelById?.type_id,
+    asset.type ?? modelById?.type_name,
+    "type_id",
+  )
   const model =
     modelById ??
     modelCandidates.find(
       (item) =>
-        (!asset.brandId || item.brand_id === asset.brandId) &&
+        (!assetBrand || item.brand_id === getMasterInternalId(assetBrand)) &&
         (!asset.brand ||
           normalize(item.brand_name ?? "") === normalize(asset.brand)) &&
-        (!asset.typeId || item.type_id === asset.typeId) &&
+        (!assetType || item.type_id === getMasterInternalId(assetType)) &&
         (!asset.type ||
           normalize(item.type_name ?? "") === normalize(asset.type)),
     ) ??
@@ -315,11 +420,11 @@ export function normalizeAssetClassification<T extends Partial<Asset>>(
 
   return {
     ...asset,
-    categoryId: getMasterItemId(category, "category_id"),
-    groupId: getMasterItemId(group, "group_id"),
-    typeId: getMasterItemId(type, "type_id"),
-    brandId: getMasterItemId(brand, "brand_id"),
-    modelId: getMasterItemId(model, "model_id"),
+    categoryId: getMasterInternalId(category),
+    groupId: getMasterInternalId(group),
+    typeId: getMasterInternalId(type),
+    brandId: getMasterInternalId(brand),
+    modelId: getMasterInternalId(model),
     category: category?.name ?? asset.category ?? "",
     group: group?.name ?? asset.group ?? "",
     type: type?.name ?? asset.type ?? "",
@@ -365,18 +470,22 @@ export function isAssetClassificationValid(
   )
   if (!category || !group || !type || !brand || !model) return false
 
-  const categoryId = getMasterItemId(category, "category_id")
-  const groupId = getMasterItemId(group, "group_id")
-  const typeId = getMasterItemId(type, "type_id")
-  const brandId = getMasterItemId(brand, "brand_id")
+  const categoryId = getMasterInternalId(category)
+  const groupId = getMasterInternalId(group)
+  const typeId = getMasterInternalId(type)
+  const brandId = getMasterInternalId(brand)
+  const modelId = getMasterInternalId(model)
   const modelSupportsBrandType =
-    (!model.brand_id || model.brand_id === brandId) &&
-    (!model.type_id || model.type_id === typeId)
+    model.brand_id === brandId && model.type_id === typeId
   return (
-    (!group.category_id || group.category_id === categoryId) &&
-    (!type.group_id || type.group_id === groupId) &&
-    (!type.category_id || type.category_id === categoryId) &&
-    (!brand.type_id || brand.type_id === typeId || modelSupportsBrandType) &&
+    group.category_id === categoryId &&
+    type.group_id === groupId &&
+    type.category_id === categoryId &&
+    (!brand.type_id || brand.type_id === typeId) &&
+    model.id === modelId &&
+    model.category_id === categoryId &&
+    model.group_id === groupId &&
+    model.type_id === typeId &&
     modelSupportsBrandType
   )
 }
@@ -386,47 +495,57 @@ export function getGroupsByCategory(groups: MasterItem[], categoryId: string) {
 }
 
 export function createCategoryRecord(
-  id: string,
+  internalId: string,
+  businessId: string,
   name: string,
+  code = generateCategoryCode(name),
   active = true,
 ): MasterItem {
   const cleanName = name.trim()
-  const code = generateCategoryCode(cleanName)
   return {
-    id,
+    id: internalId,
     name: cleanName,
     code,
     active,
-    category_id: id,
+    display_id: businessId,
+    category_id: businessId,
     category_name: cleanName,
     category_code: code,
+    prefix: code,
+    category_prefix: code,
   }
 }
 
 export function createGroupRecord(
-  id: string,
+  internalId: string,
+  businessId: string,
   name: string,
   category: MasterItem,
   active = true,
-  fixedCode?: string,
+  fixedCode = generateGroupCode(name),
 ): MasterItem {
   const cleanName = name.trim()
-  const code = fixedCode ?? generateGroupCode(cleanName)
-  const categoryId = category.category_id ?? category.id
+  const code = fixedCode
+  const categoryId = getMasterInternalId(category)
   const categoryName = category.category_name ?? category.name
   const categoryCode = category.category_code ?? category.code
   return {
-    id,
+    id: internalId,
     name: cleanName,
     code,
     active,
     parent: categoryName,
-    group_id: id,
+    display_id: businessId,
+    group_id: businessId,
     group_name: cleanName,
     group_code: code,
     category_id: categoryId,
+    category_display_id:
+      category.display_id ?? category.category_id ?? category.id,
     category_name: categoryName,
     category_code: categoryCode,
+    prefix: code,
+    group_prefix: code,
   }
 }
 
@@ -436,35 +555,41 @@ export function generateAssetId(
   type?: MasterItem,
   brand?: MasterItem,
 ) {
-  return [
+  const codes = [
     category?.category_code ?? category?.code,
     group?.group_code ?? group?.code,
     type?.type_code ?? type?.code,
     brand?.brand_code ?? brand?.code,
   ]
-    .filter(Boolean)
-    .join("")
-    .toUpperCase()
+  return codes.every((code) => typeof code === "string" && code.trim())
+    ? codes.join("").toUpperCase()
+    : ""
 }
 
 export function validateCategory(
   item: MasterItem,
   categories: MasterItem[],
 ): ValidationResult {
-  const id = item.category_id ?? item.id
+  const id = item.category_id ?? item.display_id ?? item.id
   const name = (item.category_name ?? item.name).trim()
   const code = item.category_code ?? item.code
   const others = categories.filter(
-    (candidate) => (candidate.category_id ?? candidate.id) !== id,
+    (candidate) =>
+      (candidate.category_id ?? candidate.display_id ?? candidate.id) !== id,
   )
   const errors: string[] = []
   if (!idConfig.categories.pattern.test(id))
     errors.push("Category ID must use the format c0001.")
-  if (!name) errors.push("Category name is required.")
-  if (code !== generateCategoryCode(name))
-    errors.push(
-      "Category code must match the first letter of the category name.",
+  if (
+    categories.some(
+      (candidate) =>
+        candidate.id !== item.id &&
+        (candidate.category_id ?? candidate.display_id) === id,
     )
+  )
+    errors.push("Category ID already exists.")
+  if (!name) errors.push("Category name is required.")
+  if (!code.trim()) errors.push("Category code is required.")
   if (
     others.some(
       (candidate) =>
@@ -475,7 +600,8 @@ export function validateCategory(
     errors.push("Category name already exists.")
   if (
     others.some(
-      (candidate) => (candidate.category_code ?? candidate.code) === code,
+      (candidate) =>
+        normalize(candidate.category_code ?? candidate.code) === normalize(code),
     )
   )
     errors.push("Category code already exists.")
@@ -487,7 +613,7 @@ export function validateGroup(
   groups: MasterItem[],
   categories: MasterItem[],
 ): ValidationResult {
-  const id = item.group_id ?? item.id
+  const id = item.group_id ?? item.display_id ?? item.id
   const name = (item.group_name ?? item.name).trim()
   const code = item.group_code ?? item.code
   const others = groups.filter(
@@ -496,14 +622,18 @@ export function validateGroup(
   const errors: string[] = []
   if (!idConfig.groups.pattern.test(id))
     errors.push("Group ID must use the format gr0001.")
+  if (
+    groups.some(
+      (candidate) =>
+        candidate.id !== item.id &&
+        (candidate.group_id ?? candidate.display_id) === id,
+    )
+  )
+    errors.push("Group ID already exists.")
   if (!name) errors.push("Group name is required.")
   if (!item.category_id || !resolveCategoryById(categories, item.category_id))
     errors.push("Select a valid Category.")
-  if (
-    code !== generateGroupCode(name) &&
-    !demoMaster.groups.some((seed) => seed.name === name && seed.code === code)
-  )
-    errors.push("Group code does not match the generated code.")
+  if (!code.trim()) errors.push("Group code is required.")
   if (
     others.some(
       (candidate) =>
@@ -513,28 +643,14 @@ export function validateGroup(
     errors.push("Group name already exists.")
   if (
     others.some(
-      (candidate) => (candidate.group_code ?? candidate.code) === code,
+      (candidate) =>
+        normalize(candidate.group_code ?? candidate.code) === normalize(code),
     )
   )
     errors.push(
       "Group code already exists. Enter a more distinctive group name.",
     )
   return { valid: errors.length === 0, errors }
-}
-
-function canonicalId(
-  item: MasterItem,
-  seed: MasterItem | undefined,
-  items: MasterItem[],
-  key: MasterKey,
-) {
-  const { field, pattern } = idConfig[key]
-  const current = String(item[field] ?? item.id)
-  if (pattern.test(current)) return current
-  const seeded = String(seed?.[field] ?? seed?.id ?? "")
-  return pattern.test(seeded)
-    ? seeded
-    : generateMasterId([...demoMaster[key], ...items], key)
 }
 
 export type BusinessUnitLocationReference = {
@@ -566,194 +682,272 @@ function sequentialId(
   return generateMasterId(items, key)
 }
 
-function mergeByName(
-  source: MasterItem[],
-  seeds: MasterItem[],
-  makeRecord: (
-    item: MasterItem,
-    seed: MasterItem | undefined,
-    result: MasterItem[],
-  ) => MasterItem,
-  identity = (item: MasterItem) => normalize(item.name),
-) {
-  const result: MasterItem[] = []
-  const add = (item: MasterItem) => {
-    const sameNameSeeds = seeds.filter(
-      (candidate) => normalize(candidate.name) === normalize(item.name),
-    )
-    const seed =
-      sameNameSeeds.find(
-        (candidate) => identity(candidate) === identity(item),
-      ) ?? (sameNameSeeds.length === 1 ? sameNameSeeds[0] : undefined)
-    const record = makeRecord(item, seed, result)
-    if (
-      result.some(
-        (candidate) =>
-          candidate.id === record.id ||
-          identity(candidate) === identity(record),
-      )
-    )
-      return
-    result.push(record)
-  }
-  source.forEach(add)
-  seeds.forEach(add)
-  return result
-}
-
 export function migrateMasterData(
   source: Record<string, MasterItem[]>,
   references: MasterDataMigrationReferences = {},
 ): Record<string, MasterItem[]> {
-  const categories = mergeByName(
-    Array.isArray(source.categories) ? source.categories : [],
-    demoMaster.categories,
-    (item, seed, result) =>
-      createCategoryRecord(
-        canonicalId(item, seed, result, "categories"),
-        item.category_name ?? item.name,
-        item.active !== false,
-      ),
-  )
-
-  const groups = mergeByName(
-    Array.isArray(source.groups) ? source.groups : [],
-    demoMaster.groups,
-    (item, seed, result) => {
-      const category =
-        resolveCategoryById(categories, item.category_id ?? "") ??
-        categories.find(
-          (candidate) =>
-            normalize(candidate.name) ===
-            normalize(item.category_name ?? item.parent ?? ""),
-        ) ??
-        categories.find(
-          (candidate) =>
-            normalize(candidate.name) === normalize(seed?.category_name ?? ""),
-        ) ??
-        categories[0]
-      return createGroupRecord(
-        canonicalId(item, seed, result, "groups"),
-        item.group_name ?? item.name,
-        category,
-        item.active !== false,
-        seed?.group_code ?? item.group_code ?? item.code,
+  const nextInternalId = (
+    item: MasterItem,
+    businessId: string,
+    items: MasterItem[],
+    key: MasterKey,
+  ) => {
+    const existing = String(item.id ?? "")
+    const sequence = businessId.match(/\d+$/)?.[0]
+    const candidate = /^\d+$/.test(existing)
+      ? existing
+      : sequence
+        ? String(Number(sequence))
+        : ""
+    if (
+      candidate &&
+      Number(candidate) > 0 &&
+      !items.some((entry) => String(entry.id) === candidate)
+    )
+      return candidate
+    return generateMasterInternalId(items, key)
+  }
+  const getBusinessId = (
+    item: MasterItem,
+    field: keyof MasterItem,
+    key: MasterKey,
+    items: MasterItem[],
+  ) => {
+    const pattern = idConfig[key].pattern
+    const current = [item[field], item.display_id, item.id].find((value) =>
+      pattern.test(String(value ?? "")),
+    )
+    if (
+      current &&
+      !items.some(
+        (candidate) =>
+          candidate.display_id === current ||
+          candidate[field] === current,
       )
-    },
-  )
-
-  const types = mergeByName(
-    Array.isArray(source.types) ? source.types : [],
-    demoMaster.types,
-    (item, seed, result) => {
-      const group =
-        resolveGroupById(groups, item.group_id ?? "") ??
-        groups.find(
-          (candidate) =>
-            normalize(candidate.name) ===
-            normalize(item.group_name ?? item.parent ?? seed?.group_name ?? ""),
+    )
+      return String(current)
+    return generateMasterId(items, key)
+  }
+  const rowsForWithIdentity = (
+    key: "categories" | "groups" | "types" | "brands" | "models",
+    identity: (item: MasterItem) => string = (item) => normalize(item.name),
+  ) => {
+    const merged: MasterItem[] = []
+    ;[...(Array.isArray(source[key]) ? source[key] : []), ...demoMaster[key]].forEach(
+      (item) => {
+        const signature = identity(item)
+        const index = merged.findIndex(
+          (candidate) => identity(candidate) === signature,
         )
-      const id = canonicalId(item, seed, result, "types")
-      const name = (item.type_name ?? item.name).trim()
-      const code = seed?.type_code ?? item.type_code ?? item.code
-      return {
-        ...item,
-        id,
-        name,
-        code,
-        parent: group?.name ?? "",
-        type_id: id,
-        type_name: name,
-        type_code: code,
-        group_id: group?.group_id,
-        group_name: group?.name,
-        group_code: group?.group_code ?? group?.code,
-        category_id: group?.category_id,
-        category_name: group?.category_name,
-        category_code: group?.category_code,
-        active: item.active !== false,
-      }
-    },
-  )
+        if (index === -1) merged.push(item)
+        else if (item === source[key]?.find((candidate) => candidate === item))
+          merged[index] = item
+      },
+    )
+    return merged
+  }
+  const categories: MasterItem[] = []
+  rowsForWithIdentity("categories").forEach((item) => {
+    const name = (item.category_name ?? item.name).trim()
+    const businessId = getBusinessId(item, "category_id", "categories", categories)
+    const id = nextInternalId(item, businessId, categories, "categories")
+    const code = item.category_code ?? item.prefix ?? item.code ?? ""
+    categories.push({
+      ...item,
+      id,
+      name,
+      code,
+      display_id: businessId,
+      category_id: businessId,
+      category_name: name,
+      category_code: code,
+      prefix: code,
+      category_prefix: item.category_prefix ?? item.prefix,
+      active: item.active !== false,
+    })
+  })
 
-  const brands = mergeByName(
-    Array.isArray(source.brands) ? source.brands : [],
-    demoMaster.brands,
-    (item, seed, result) => {
-      const id = canonicalId(item, seed, result, "brands")
-      const type =
-        resolveTypeById(types, item.type_id ?? "") ??
-        types.find(
-          (candidate) =>
-            normalize(candidate.name) === normalize(item.parent ?? ""),
-        )
-      const name = (item.brand_name ?? item.name).trim()
-      const code = seed?.brand_code ?? item.brand_code ?? item.code
-      return {
-        ...item,
-        id,
-        name,
-        code,
-        parent: type?.name ?? "",
-        brand_id: id,
-        brand_name: name,
-        brand_code: code,
-        type_id: type?.type_id,
-        active: item.active !== false,
-      }
-    },
-  )
-
-  const models = mergeByName(
-    Array.isArray(source.models) ? source.models : [],
-    demoMaster.models,
-    (item, seed, result) => {
-      const id = canonicalId(item, seed, result, "models")
-      const brand =
-        resolveBrandById(brands, item.brand_id ?? seed?.brand_id ?? "") ??
-        brands.find(
-          (candidate) =>
-            normalize(candidate.name) ===
-            normalize(item.brand_name ?? item.parent ?? ""),
-        )
-      const type = resolveTypeById(
-        types,
-        item.type_id ?? seed?.type_id ?? brand?.type_id ?? "",
+  const groups: MasterItem[] = []
+  rowsForWithIdentity("groups").forEach((item) => {
+    const name = (item.group_name ?? item.name).trim()
+    const businessId = getBusinessId(item, "group_id", "groups", groups)
+    const category =
+      resolveCategoryById(categories, String(item.category_id ?? "")) ??
+      categories.find(
+        (candidate) =>
+          normalize(candidate.name) ===
+          normalize(item.category_name ?? item.parent ?? ""),
       )
-      const group = resolveGroupById(groups, type?.group_id ?? "")
-      const category = resolveCategoryById(categories, group?.category_id ?? "")
-      const name = (item.model_name ?? item.name).trim()
-      return {
-        ...item,
-        id,
-        name,
-        code: item.model_code ?? item.code,
-        parent: brand?.name ?? "",
-        model_id: id,
-        model_name: name,
-        model_code: item.model_code ?? item.code,
-        asset_id:
-          generateAssetId(category, group, type, brand) ||
-          item.asset_id ||
-          seed?.asset_id,
-        brand_id: brand?.brand_id,
-        brand_name: brand?.name,
-        brand_code: brand?.brand_code ?? brand?.code,
-        type_id: type?.type_id,
-        type_name: type?.name,
-        type_code: type?.type_code ?? type?.code,
-        group_id: group?.group_id,
-        group_name: group?.name,
-        group_code: group?.group_code ?? group?.code,
-        category_id: category?.category_id,
-        category_name: category?.name,
-        category_code: category?.category_code ?? category?.code,
-        active: item.active !== false,
-      }
-    },
+    const id = nextInternalId(item, businessId, groups, "groups")
+    const code = item.group_code ?? item.prefix ?? item.code ?? ""
+    groups.push({
+      ...item,
+      id,
+      name,
+      code,
+      display_id: businessId,
+      group_id: businessId,
+      group_name: name,
+      group_code: code,
+      group_prefix: item.group_prefix ?? item.prefix,
+      category_id: getMasterInternalId(category),
+      category_display_id: category?.display_id ?? "",
+      category_name: category?.name ?? "",
+      category_code: category?.category_code ?? category?.code ?? "",
+      parent: category?.name ?? "",
+      active: item.active !== false,
+    })
+  })
+
+  const types: MasterItem[] = []
+  rowsForWithIdentity("types").forEach((item) => {
+    const name = (item.type_name ?? item.name).trim()
+    const businessId = getBusinessId(item, "type_id", "types", types)
+    const group =
+      resolveGroupById(groups, String(item.group_id ?? "")) ??
+      groups.find(
+        (candidate) =>
+          normalize(candidate.name) ===
+          normalize(item.group_name ?? item.parent ?? ""),
+      )
+    const category = resolveCategoryById(
+      categories,
+      String(group?.category_id ?? ""),
+    )
+    const id = nextInternalId(item, businessId, types, "types")
+    const code = item.type_code ?? item.prefix ?? item.code ?? ""
+    types.push({
+      ...item,
+      id,
+      name,
+      code,
+      display_id: businessId,
+      type_id: businessId,
+      type_name: name,
+      type_code: code,
+      group_id: getMasterInternalId(group),
+      group_name: group?.name ?? "",
+      group_code: group?.group_code ?? group?.code ?? "",
+      category_id: getMasterInternalId(category),
+      category_display_id: category?.display_id ?? "",
+      category_name: category?.name ?? "",
+      category_code: category?.category_code ?? category?.code ?? "",
+      parent: group?.name ?? "",
+      active: item.active !== false,
+    })
+  })
+
+  const brands: MasterItem[] = []
+  rowsForWithIdentity("brands").forEach((item) => {
+    const name = (item.brand_name ?? item.name).trim()
+    const businessId = getBusinessId(item, "brand_id", "brands", brands)
+    const type =
+      resolveTypeById(types, String(item.type_id ?? "")) ??
+      types.find(
+        (candidate) =>
+          normalize(candidate.name) ===
+          normalize(item.type_name ?? item.parent ?? ""),
+      )
+    const id = nextInternalId(item, businessId, brands, "brands")
+    const code = item.brand_code ?? item.prefix ?? item.code ?? ""
+    brands.push({
+      ...item,
+      id,
+      name,
+      code,
+      display_id: businessId,
+      brand_id: businessId,
+      brand_name: name,
+      brand_code: code,
+      type_id: type ? getMasterInternalId(type) : "",
+      type_name: type?.name ?? "",
+      type_code: type?.type_code ?? type?.code ?? "",
+      type_display_id: type?.display_id ?? "",
+      parent: type?.name ?? "",
+      active: item.active !== false,
+    })
+  })
+
+  const models: MasterItem[] = []
+  rowsForWithIdentity(
+    "models",
     (item) =>
-      `${normalize(item.model_name ?? item.name)}|${item.brand_id ?? normalize(item.brand_name ?? item.parent ?? "")}`,
-  )
+      `${normalize(item.model_name ?? item.name)}|${normalize(item.brand_name ?? item.parent ?? item.brand_id ?? "")}`,
+  ).forEach((item) => {
+    const name = (item.model_name ?? item.name).trim()
+    const businessId = getBusinessId(item, "model_id", "models", models)
+    const brand =
+      resolveBrandById(brands, String(item.brand_id ?? "")) ??
+      brands.find(
+        (candidate) =>
+          normalize(candidate.name) ===
+          normalize(item.brand_name ?? item.parent ?? ""),
+      )
+    const type =
+      resolveTypeById(types, String(item.type_id ?? "")) ??
+      types.find(
+        (candidate) =>
+          normalize(candidate.name) === normalize(item.type_name ?? ""),
+      ) ??
+      (brand?.type_id ? resolveTypeById(types, brand.type_id) : undefined)
+    const group =
+      resolveGroupById(groups, String(item.group_id ?? "")) ??
+      (type ? resolveGroupById(groups, String(type.group_id ?? "")) : undefined)
+    const category =
+      resolveCategoryById(categories, String(item.category_id ?? "")) ??
+      (group
+        ? resolveCategoryById(categories, String(group.category_id ?? ""))
+        : undefined)
+    const id = nextInternalId(item, businessId, models, "models")
+    const code = item.model_code ?? item.code ?? ""
+    models.push({
+      ...item,
+      id,
+      name,
+      code,
+      display_id: businessId,
+      model_id: businessId,
+      model_name: name,
+      model_code: code,
+      asset_id: generateAssetId(category, group, type, brand),
+      category_id: getMasterInternalId(category),
+      category_name: category?.name ?? "",
+      category_code: category?.category_code ?? category?.code ?? "",
+      group_id: getMasterInternalId(group),
+      group_name: group?.name ?? "",
+      group_code: group?.group_code ?? group?.code ?? "",
+      type_id: getMasterInternalId(type),
+      type_name: type?.name ?? "",
+      type_code: type?.type_code ?? type?.code ?? "",
+      brand_id: getMasterInternalId(brand),
+      brand_name: brand?.name ?? "",
+      brand_code: brand?.brand_code ?? brand?.code ?? "",
+      parent: brand?.name ?? "",
+      active: item.active !== false,
+    })
+  })
+
+  const modelTypesByBrand = new Map<string, Set<string>>()
+  models.forEach((model) => {
+    if (!model.brand_id || !model.type_id) return
+    const typeIds = modelTypesByBrand.get(model.brand_id) ?? new Set<string>()
+    typeIds.add(model.type_id)
+    modelTypesByBrand.set(model.brand_id, typeIds)
+  })
+  brands.forEach((brand) => {
+    const modelTypeIds = modelTypesByBrand.get(brand.id)
+    if (
+      brand.type_id &&
+      modelTypeIds &&
+      [...modelTypeIds].some((typeId) => typeId !== brand.type_id)
+    ) {
+      brand.type_id = ""
+      brand.type_name = ""
+      brand.type_code = ""
+      brand.type_display_id = ""
+      brand.parent = ""
+    }
+  })
 
   const businessUnits: MasterItem[] = []
   const addBusinessUnit = (nameValue: unknown, record?: MasterItem) => {

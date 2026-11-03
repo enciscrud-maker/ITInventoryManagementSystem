@@ -59,7 +59,7 @@ async function proxyAuthRequest(
   const allowedMasterDataMethod =
     !isMasterDataEndpoint || path.length === 2
       ? ["GET", "POST"].includes(request.method)
-      : hasResourceId && ["GET", "DELETE"].includes(request.method)
+      : hasResourceId && ["GET", "PUT", "DELETE"].includes(request.method)
   const expectedMethod = allowedMethods[endpoint]
 
   if (!isAuthEndpoint && !isMasterDataEndpoint) {
@@ -256,4 +256,5 @@ async function proxyAuthRequest(
 
 export const GET = proxyAuthRequest
 export const POST = proxyAuthRequest
+export const PUT = proxyAuthRequest
 export const DELETE = proxyAuthRequest
