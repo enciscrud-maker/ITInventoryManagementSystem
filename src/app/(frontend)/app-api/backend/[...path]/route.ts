@@ -6,6 +6,7 @@ const refreshCookie = "iti-api-refresh"
 
 const allowedMethods: Record<string, string> = {
   "api/auth/login": "POST",
+  "api/auth/password-reset": "POST",
   "api/auth/logout": "POST",
   "api/auth/refresh": "POST",
   "api/auth/me": "GET",
@@ -26,6 +27,8 @@ const usersEndpoint = /^api\/users(?:\/[1-9]\d*)?$/
 const userStatusEndpoint = /^api\/users\/[1-9]\d*\/status$/
 const userRolesEndpoint = /^api\/users\/[1-9]\d*\/roles$/
 const userPermissionsEndpoint = /^api\/users\/[1-9]\d*\/permissions$/
+const passwordResetRequestsEndpoint =
+  /^api\/password-reset-requests(?:\/[1-9]\d*)?$/
 const assetsReadResource = "api/assets"
 const assetIdPath = /^api\/assets\/[1-9]\d*$/
 const assetActionPath =
@@ -76,7 +79,10 @@ async function proxyAuthRequest(
   const isAuthEndpoint = Object.hasOwn(allowedMethods, endpoint)
   const isAccountEndpoint = accountEndpoint.test(endpoint)
   const isUsersEndpoint = usersEndpoint.test(endpoint)
-  const isUserManagementEndpoint = isAccountEndpoint || isUsersEndpoint
+  const isUserManagementEndpoint =
+    isAccountEndpoint ||
+    isUsersEndpoint ||
+    passwordResetRequestsEndpoint.test(endpoint)
   const resource = path.length >= 2 ? path.slice(0, 2).join("/") : ""
   const isMasterDataEndpoint = masterDataResources.has(resource)
   const isAssetsReadEndpoint = endpoint === assetsReadResource
@@ -139,7 +145,12 @@ async function proxyAuthRequest(
     (userStatusEndpoint.test(endpoint) && request.method === "PATCH") ||
     (userRolesEndpoint.test(endpoint) && request.method === "PUT") ||
     (userPermissionsEndpoint.test(endpoint) &&
-      ["GET", "POST"].includes(request.method))
+      ["GET", "POST"].includes(request.method)) ||
+    (endpoint === "api/password-reset-requests" &&
+      request.method === "GET") ||
+    (passwordResetRequestsEndpoint.test(endpoint) &&
+      endpoint !== "api/password-reset-requests" &&
+      request.method === "PATCH")
   const expectedMethod = allowedMethods[endpoint]
 
   const allowedGoodsMethod =
@@ -232,7 +243,7 @@ async function proxyAuthRequest(
     }
 
     let requestBody: BodyInit | undefined
-    if (endpoint === "api/auth/login") {
+    if (isAuthEndpoint && request.method !== "GET") {
       requestBody = await request.text()
     } else if (endpoint === "api/auth/refresh") {
       requestBody = JSON.stringify({ refreshToken })

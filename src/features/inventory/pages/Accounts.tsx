@@ -132,7 +132,6 @@ export default function AccountsPage() {
   const [resetRequests, setResetRequests] = useState<
     PasswordResetRequestView[]
   >([])
-  const [resetAdminEmail, setResetAdminEmail] = useState("")
   const [selectedReset, setSelectedReset] =
     useState<PasswordResetRequestView | null>(null)
   const [resetAction, setResetAction] = useState<"process" | "reject">(
@@ -160,7 +159,6 @@ export default function AccountsPage() {
       const result = await getPasswordResetRequests()
       if (result.success) {
         setResetRequests(result.data.requests)
-        setResetAdminEmail(result.data.adminEmail)
       } else setError(result.error)
     })
 
@@ -634,9 +632,8 @@ export default function AccountsPage() {
         {activeTab === tabs[3] && (
           <>
             <div className="scope-preview account-reset-notice">
-              Requests are saved securely. Notification target:{" "}
-              <strong>{resetAdminEmail || "Not configured"}</strong>. Automatic
-              email delivery is not configured.
+              Reset requests are stored securely and reviewed here by Account
+              Management.
             </div>
             <div className="table-scroll">
               <table>

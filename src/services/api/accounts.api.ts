@@ -14,6 +14,50 @@ type UserPage = {
   hasNext: boolean
 }
 
+type PasswordResetApiRequest = {
+  id: number
+  requestId: string
+  accountId: number
+  memberName: string
+  nik: string
+  email: string
+  phone: string
+  requestDate: string
+  status: PasswordResetRequestView["status"] | string
+  processedBy?: string | null
+  processedAt?: string | null
+  rejectionReason?: string | null
+}
+
+type PasswordResetApiResponse = {
+  requests: PasswordResetApiRequest[]
+}
+
+const toPasswordResetRequest = (
+  request: PasswordResetApiRequest,
+): PasswordResetRequestView | null => {
+  if (
+    request.status !== "Pending" &&
+    request.status !== "Processed" &&
+    request.status !== "Rejected"
+  )
+    return null
+  return {
+    id: String(request.id),
+    request_id: request.requestId,
+    account_id: String(request.accountId),
+    member_name: request.memberName,
+    nik: request.nik,
+    email: request.email,
+    phone: request.phone,
+    request_date: request.requestDate,
+    status: request.status,
+    processed_by: request.processedBy ?? undefined,
+    processed_at: request.processedAt ?? undefined,
+    rejection_reason: request.rejectionReason ?? undefined,
+  }
+}
+
 const toManagedAccountRequest = (data: Record<string, unknown>) => ({
   employeeName: String(data.name ?? ""),
   employeeNik: String(data.nik ?? ""),
@@ -49,7 +93,7 @@ export const accountsApi = {
       )
       if (valid.length !== mapped.length) {
         return {
-          success: false,
+          success: false as const,
           error: "Respons daftar akun server tidak sesuai format.",
           code: "INVALID_RESPONSE",
           status: result.status,
@@ -79,7 +123,7 @@ export const accountsApi = {
     const userId = Number(id)
     if (!Number.isInteger(userId) || userId < 1)
       return {
-        success: false,
+        success: false as const,
         error: "ID akun tidak valid.",
         code: "INVALID_ACCOUNT_ID",
       }
@@ -94,24 +138,66 @@ export const accountsApi = {
     if (!result.success) return result
     return mapData(result, toPublicAccount)
   },
-  getPasswordResetRequests: () =>
-    httpRequest<{
-      requests: PasswordResetRequestView[]
-      adminEmail: string
-      emailConfigured: false
-    }>(apiRoutes.app.passwordReset, {}, localRequest),
-  processPasswordReset: (data: {
+  async getPasswordResetRequests() {
+    const result = await httpRequest<PasswordResetApiResponse>(
+      apiRoutes.app.passwordResetRequests,
+      {},
+      localRequest,
+    )
+    if (!result.success) return result
+    if (!Array.isArray(result.data.requests)) {
+      return {
+        success: false as const,
+        error: "Respons permintaan reset password tidak sesuai format.",
+        code: "INVALID_RESPONSE",
+        status: result.status,
+      }
+    }
+    const mapped = result.data.requests.map(toPasswordResetRequest)
+    if (mapped.some((request) => request === null)) {
+      return {
+        success: false as const,
+        error: "Respons permintaan reset password tidak sesuai format.",
+        code: "INVALID_RESPONSE",
+        status: result.status,
+      }
+    }
+    return {
+      ...result,
+      data: {
+        requests: mapped.filter(
+          (request): request is PasswordResetRequestView => request !== null,
+        ),
+      },
+    }
+  },
+  async processPasswordReset(data: {
     id: string
     action: "process" | "reject"
     newPassword?: string
     rejectionReason?: string
-  }) =>
-    httpRequest<PasswordResetRequestView>(
-      apiRoutes.app.passwordReset,
+  }) {
+    const id = Number(data.id)
+    if (!Number.isInteger(id) || id < 1) {
+      return {
+        success: false,
+        error: "ID permintaan reset password tidak valid.",
+        code: "INVALID_REQUEST_ID",
+      } as const
+    }
+    const result = await httpRequest<PasswordResetApiRequest>(
+      `${apiRoutes.app.passwordResetRequests}/${id}`,
       {
         method: "PATCH",
-        body: JSON.stringify(data),
+        body: JSON.stringify({
+          action: data.action,
+          newPassword: data.newPassword,
+          rejectionReason: data.rejectionReason,
+        }),
       },
       localRequest,
-    ),
+    )
+    if (!result.success) return result
+    return mapData(result, toPasswordResetRequest)
+  },
 }

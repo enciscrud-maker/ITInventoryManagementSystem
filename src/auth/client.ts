@@ -4,7 +4,6 @@ import { accountsApi, authApi, profileApi } from "@/services/api"
 
 type PasswordResetSubmission = {
   message: string
-  emailDelivery: "not-configured"
 }
 
 export const loginAccount = authApi.login
@@ -25,7 +24,7 @@ export const submitPasswordReset = (data: {
   phone: string
 }) => {
   return httpRequest<PasswordResetSubmission>(
-    apiRoutes.app.passwordReset,
+    apiRoutes.auth.passwordReset,
     {
       method: "POST",
       body: JSON.stringify(data),

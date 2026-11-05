@@ -76,7 +76,7 @@ export function LoginForm() {
       return
     }
     setForgotMessage(
-      `${result.data.message} Email delivery is not configured yet; the request is available in Account Management.`,
+      result.data.message,
     )
   }
 
