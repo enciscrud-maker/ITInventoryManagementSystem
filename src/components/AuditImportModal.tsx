@@ -38,7 +38,7 @@ export function AuditImportModal({
   open: boolean
   items: AuditItem[]
   onClose: () => void
-  onCommit: (rows: { assetId: string, qty: number }[]) => number
+  onCommit: (rows: { assetId: string; qty: number }[]) => number
 }) {
   const [rows, setRows] = useState<RawRow[]>([])
   const [fileName, setFileName] = useState("")
@@ -50,7 +50,14 @@ export function AuditImportModal({
       const idText = pick(raw, ["asset_id", "id_asset", "assetid", "asset"])
       const qtyText = pick(raw, ["qty", "quantity", "physical_qty", "jumlah"])
       const qty = Number(qtyText)
-      const assetId = matchAssetId(idText, ids) ?? ""
+      const byId = matchAssetId(idText, ids)
+      const normalizedCode = idText.toLocaleUpperCase()
+      const assetId =
+        byId ??
+        items.find(
+          (item) => item.assetCode?.toLocaleUpperCase() === normalizedCode,
+        )?.assetId ??
+        ""
       let problem = ""
       if (!idText) problem = "Asset ID is empty"
       else if (!assetId) problem = "Not part of this session"

@@ -73,6 +73,48 @@ const pagesFrom = (value: unknown, depth = 0): number => {
   return pagesFrom(read(value, "data"), depth + 1)
 }
 
+export type AssetRequest = {
+  catId?: number
+  groupId?: number
+  typeId?: number
+  brandId?: number
+  assetName?: string | null
+  assetType?: "In" | "Out"
+  statusId: number
+  assetPrefix?: string | null
+  quantity?: number | null
+  unitOfMeasure?: string | null
+  serialNumber?: string | null
+  assetTag?: string | null
+  purchaseOrderNumber?: string | null
+  sapMaterialNumber?: string | null
+  assetValue?: number | null
+  description?: string | null
+  busUnitId?: number | null
+  locationId?: number | null
+  conditionId?: number | null
+  businessUnit?: string | null
+  rowVersion?: string | null
+}
+
+export type AssetImportError = {
+  rowNumber: number
+  messages: string[] | null
+}
+
+export type AssetImportResult = {
+  totalRows: number
+  successCount: number
+  failedCount: number
+  errors: AssetImportError[] | null
+}
+
+const numericId = (value: string | undefined) => {
+  if (!value) return undefined
+  const parsed = Number(value)
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined
+}
+
 const requestPage = (page: number) =>
   httpRequest<unknown>(
     `${apiRoutes.inventory.assets}?Page=${page}&PageSize=100`,
@@ -83,10 +125,8 @@ const requestPage = (page: number) =>
 const toAsset = (value: unknown): Asset | null => {
   if (!isRecord(value)) return null
 
-  const id = text(
-    read(value, "assetCode", "assetNumber", "assetNo", "assetId", "id", "code"),
-  )
-  if (!id) return null
+  const assetId = numeric(read(value, "assetId", "id"))
+  if (!assetId || assetId <= 0) return null
 
   const category = relatedValue(
     value,
@@ -147,16 +187,10 @@ const toAsset = (value: unknown): Asset | null => {
   const condition = relatedValue(
     value,
     ["conditionId", "assetConditionId"],
-    ["condition", "assetCondition", "status", "assetStatus"],
-    ["conditionName", "assetConditionName", "statusName", "assetStatusName"],
+    ["condition", "assetCondition"],
+    ["conditionName", "assetConditionName"],
     ["conditionId", "assetConditionId"],
-    [
-      "conditionName",
-      "assetConditionName",
-      "name",
-      "statusName",
-      "assetStatusName",
-    ],
+    ["conditionName", "assetConditionName", "name"],
   )
   const quantityValue = read(value, "quantity", "qty", "stockQuantity")
   const assetValue = numeric(
@@ -164,7 +198,15 @@ const toAsset = (value: unknown): Asset | null => {
   )
 
   return {
-    id,
+    id: String(assetId),
+    assetId: String(assetId),
+    assetCode:
+      text(read(value, "assetCode", "assetNumber", "assetNo")) || undefined,
+    assetPrefix: text(read(value, "assetPrefix")) || undefined,
+    rowVersion: text(read(value, "rowVersion")) || undefined,
+    conditionId: text(read(value, "conditionId")) || undefined,
+    statusId: text(read(value, "statusId")) || undefined,
+    assetStatus: text(read(value, "assetStatus", "statusName")) || undefined,
     serial: text(read(value, "serial", "serialNumber", "serialNo")),
     tag:
       text(read(value, "tag", "assetTag", "tagNumber", "tagNo")) || undefined,
@@ -193,6 +235,59 @@ const toAsset = (value: unknown): Asset | null => {
     value: assetValue,
     description: text(read(value, "description")) || undefined,
     demo: false,
+  }
+}
+
+function toAssetRequest(asset: Asset): ApiResult<AssetRequest> {
+  const catId = numericId(asset.categoryId)
+  const groupId = numericId(asset.groupId)
+  const typeId = numericId(asset.typeId)
+  const brandId = numericId(asset.brandId)
+  const busUnitId = numericId(asset.businessUnitId)
+  const locationId = numericId(asset.locationId)
+  if (!catId || !groupId || !typeId || !brandId || !busUnitId || !locationId) {
+    return {
+      success: false,
+      error:
+        "Backend membutuhkan ID numerik untuk klasifikasi, Business Unit, dan Location.",
+      code: "INVALID_ASSET_REFERENCE",
+    }
+  }
+
+  const statusId = numericId(asset.statusId)
+  const conditionId = numericId(asset.conditionId)
+  if (!statusId) {
+    return {
+      success: false,
+      error: "Pilih Asset Status yang valid dari Master Data.",
+      code: "INVALID_ASSET_STATUS",
+    }
+  }
+  return {
+    success: true,
+    status: 200,
+    data: {
+      catId,
+      groupId,
+      typeId,
+      brandId,
+      assetName: asset.model,
+      statusId,
+      assetPrefix: asset.assetPrefix ?? null,
+      quantity: asset.quantity,
+      unitOfMeasure: asset.uom,
+      serialNumber: asset.serial,
+      assetTag: asset.tag ?? null,
+      purchaseOrderNumber: asset.po ?? null,
+      sapMaterialNumber: asset.sap ?? null,
+      assetValue: asset.value ?? null,
+      description: asset.description ?? null,
+      busUnitId,
+      locationId,
+      ...(conditionId ? { conditionId } : {}),
+      businessUnit: asset.businessUnit,
+      rowVersion: asset.rowVersion ?? null,
+    },
   }
 }
 
@@ -236,7 +331,8 @@ export const assetsApi = {
     if (assets.some((asset) => asset === null)) {
       return {
         success: false,
-        error: "Data assets dari server tidak memiliki Asset ID yang valid.",
+        error:
+          "Data assets dari server tidak memiliki assetId numerik yang valid.",
         code: "INVALID_ASSET_RECORD",
         status: firstPage.status,
       }
@@ -247,5 +343,60 @@ export const assetsApi = {
       data: assets.filter((asset): asset is Asset => asset !== null),
       status: firstPage.status,
     }
+  },
+  create: async (asset: Asset): Promise<ApiResult<Asset>> => {
+    const request = toAssetRequest(asset)
+    if (!request.success) return request
+    const result = await httpRequest<unknown>(
+      apiRoutes.inventory.assets,
+      { method: "POST", body: JSON.stringify(request.data) },
+      { baseUrl: "same-origin" },
+    )
+    if (!result.success) return result
+    const created = toAsset(result.data)
+    return created
+      ? { success: true, data: created, status: result.status }
+      : {
+          success: false,
+          error: "Respons create asset tidak memiliki assetId numerik.",
+          code: "INVALID_ASSET_RESPONSE",
+          status: result.status,
+        }
+  },
+  update: async (asset: Asset): Promise<ApiResult<Asset>> => {
+    const id = numericId(asset.assetId ?? asset.id)
+    if (!id) {
+      return {
+        success: false,
+        error: "Asset ID dari server tidak valid.",
+        code: "INVALID_ASSET_ID",
+      }
+    }
+    const request = toAssetRequest(asset)
+    if (!request.success) return request
+    const result = await httpRequest<unknown>(
+      `${apiRoutes.inventory.assets}/${id}`,
+      { method: "PUT", body: JSON.stringify(request.data) },
+      { baseUrl: "same-origin" },
+    )
+    if (!result.success) return result
+    const updated = toAsset(result.data)
+    return updated
+      ? { success: true, data: updated, status: result.status }
+      : {
+          success: false,
+          error: "Respons update asset tidak memiliki assetId numerik.",
+          code: "INVALID_ASSET_RESPONSE",
+          status: result.status,
+        }
+  },
+  importFile: (file: File) => {
+    const formData = new FormData()
+    formData.set("file", file)
+    return httpRequest<AssetImportResult>(
+      `${apiRoutes.inventory.assets}/import`,
+      { method: "POST", body: formData },
+      { baseUrl: "same-origin" },
+    )
   },
 }

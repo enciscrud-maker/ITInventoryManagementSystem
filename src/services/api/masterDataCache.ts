@@ -2,14 +2,22 @@ import type { ApiResult } from "@/lib/api/types"
 import {
   assetGroupsApi,
   assetModelsApi,
+  assetStatusesApi,
   assetTypesApi,
   brandsApi,
+  businessUnitsApi,
   categoriesApi,
+  conditionsApi,
+  locationsApi,
   type AssetGroupDto,
   type AssetModelDto,
+  type AssetStatusDto,
   type AssetTypeDto,
   type BrandDto,
+  type BusinessUnitDto,
   type CategoryDto,
+  type ConditionDto,
+  type LocationDto,
   type MasterDataApi,
   type MasterDataPage,
 } from "@/services/api/masterData.api"
@@ -20,6 +28,10 @@ export type MasterDataSnapshot = {
   types: AssetTypeDto[]
   models: AssetModelDto[]
   groups: AssetGroupDto[]
+  businessUnits: BusinessUnitDto[]
+  locations: LocationDto[]
+  conditions: ConditionDto[]
+  assetStatuses: AssetStatusDto[]
 }
 
 const cacheDurationMs = 120_000
@@ -58,16 +70,39 @@ async function getAllPages<T>(
 }
 
 async function fetchSnapshot(): Promise<ApiResult<MasterDataSnapshot>> {
-  const [brands, categories, types, models, groups] = await Promise.all([
+  const [
+    brands,
+    categories,
+    types,
+    models,
+    groups,
+    businessUnits,
+    locations,
+    conditions,
+    assetStatuses,
+  ] = await Promise.all([
     getAllPages(brandsApi),
     getAllPages(categoriesApi),
     getAllPages(assetTypesApi),
     getAllPages(assetModelsApi),
     getAllPages(assetGroupsApi),
+    getAllPages(businessUnitsApi),
+    getAllPages(locationsApi),
+    getAllPages(conditionsApi),
+    getAllPages(assetStatusesApi),
   ])
-  const failedResult = [brands, categories, types, models, groups].find(
-    (result) => !result.success,
-  )
+  const results = [
+    brands,
+    categories,
+    types,
+    models,
+    groups,
+    businessUnits,
+    locations,
+    conditions,
+    assetStatuses,
+  ]
+  const failedResult = results.find((result) => !result.success)
   if (failedResult && !failedResult.success) return failedResult
 
   if (
@@ -75,7 +110,11 @@ async function fetchSnapshot(): Promise<ApiResult<MasterDataSnapshot>> {
     !categories.success ||
     !types.success ||
     !models.success ||
-    !groups.success
+    !groups.success ||
+    !businessUnits.success ||
+    !locations.success ||
+    !conditions.success ||
+    !assetStatuses.success
   ) {
     return {
       success: false,
@@ -92,6 +131,10 @@ async function fetchSnapshot(): Promise<ApiResult<MasterDataSnapshot>> {
       types: types.data,
       models: models.data,
       groups: groups.data,
+      businessUnits: businessUnits.data,
+      locations: locations.data,
+      conditions: conditions.data,
+      assetStatuses: assetStatuses.data,
     },
   }
 }

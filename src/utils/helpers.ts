@@ -14,17 +14,23 @@ export const formatCurrency = (value = 0) =>
   }).format(value)
 export const today = () => new Date().toISOString().slice(0, 10)
 
+export function generateAssetPrefix(
+  values: Partial<Asset>,
+  master: Record<string, MasterItem[]>,
+) {
+  const code = (key: string, name?: string) =>
+    master[key]?.find((item) => item.name === name)?.code ?? "XX"
+  return `${code("categories", values.category)}${code("groups", values.group)}${code("types", values.type)}${code("brands", values.brand)}${values.businessUnit ?? "XXX"}`
+    .replace(/\W/g, "")
+    .toUpperCase()
+}
+
 export function generateAssetId(
   values: Partial<Asset>,
   master: Record<string, MasterItem[]>,
   assets: Asset[],
 ) {
-  const code = (key: string, name?: string) =>
-    master[key]?.find((x) => x.name === name)?.code ?? "XX"
-  const prefix =
-    `${code("categories", values.category)}${code("groups", values.group)}${code("types", values.type)}${code("brands", values.brand)}${values.businessUnit ?? "XXX"}`
-      .replace(/\W/g, "")
-      .toUpperCase()
+  const prefix = generateAssetPrefix(values, master)
   const max = assets
     .filter((a) => a.id.startsWith(prefix))
     .reduce((m, a) => Math.max(m, Number(a.id.slice(-5)) || 0), 0)

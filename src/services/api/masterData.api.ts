@@ -114,6 +114,56 @@ export type AssetGroupRequest = {
   isActive?: boolean
 }
 
+export type BusinessUnitDto = {
+  busUnitId: number
+  busUnitCode: string | null
+  busUnitPrefix: string | null
+  isActive: boolean
+}
+
+export type BusinessUnitRequest = {
+  busUnitCode?: string | null
+  busUnitPrefix?: string | null
+  isActive?: boolean
+}
+
+export type LocationDto = {
+  locationId: number
+  busUnitId: number
+  locationName: string | null
+}
+
+export type LocationRequest = {
+  busUnitId?: number
+  locationName?: string | null
+}
+
+export type ConditionDto = {
+  conditionId: number
+  conditionCode: string | null
+  conditionName: string | null
+  isActive: boolean
+}
+
+export type ConditionRequest = {
+  conditionCode?: string | null
+  conditionName?: string | null
+  isActive?: boolean
+}
+
+export type AssetStatusDto = {
+  statusId: number
+  statusCode: string | null
+  statusName: string | null
+  isActive: boolean
+}
+
+export type AssetStatusRequest = {
+  statusCode?: string | null
+  statusName?: string | null
+  isActive?: boolean
+}
+
 export type MasterDataApi<TDto,
 TCreate,> = {
   getAll: (query?: MasterDataQuery) => Promise<ApiResult<MasterDataPage<TDto>>>
@@ -233,10 +283,32 @@ export const assetGroupsApi =
     apiRoutes.masterData.groups,
   )
 
+export const businessUnitsApi =
+  createResourceApi<BusinessUnitDto, BusinessUnitRequest>(
+    apiRoutes.masterData.businessUnits,
+  )
+
+export const locationsApi = createResourceApi<LocationDto, LocationRequest>(
+  apiRoutes.masterData.locations,
+)
+
+export const conditionsApi = createResourceApi<ConditionDto, ConditionRequest>(
+  apiRoutes.masterData.conditions,
+)
+
+export const assetStatusesApi =
+  createResourceApi<AssetStatusDto, AssetStatusRequest>(
+    apiRoutes.masterData.assetStatuses,
+  )
+
 export const masterDataApi = {
   brands: brandsApi,
   categories: categoriesApi,
   types: assetTypesApi,
   models: assetModelsApi,
   groups: assetGroupsApi,
+  businessUnits: businessUnitsApi,
+  locations: locationsApi,
+  conditions: conditionsApi,
+  assetStatuses: assetStatusesApi,
 }

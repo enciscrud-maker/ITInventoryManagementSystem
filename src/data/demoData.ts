@@ -1,6 +1,16 @@
 import { canonicalMasterSeed } from "./masterDataSeed"
 
 export type Asset = {
+  /** Internal database identifier; `id` remains its string key throughout the UI. */
+  assetId?: string
+  /** Business-facing code generated from the internal asset ID. */
+  assetCode?: string
+  /** Prefix used by the backend when generating the asset code. */
+  assetPrefix?: string
+  rowVersion?: string
+  conditionId?: string
+  statusId?: string
+  assetStatus?: string
   id: string
   serial: string
   tag?: string
@@ -114,6 +124,8 @@ export type AuditScanEntry = {
 
 export type AuditItem = {
   assetId: string
+  assetCode?: string
+  apiItemId?: string
   /** Snapshot of the asset quantity when the session was created. */
   systemQty?: number
   /** Snapshot of the asset location when the session was created. */
@@ -131,7 +143,10 @@ export type AuditItem = {
   /** Compressed image data URLs. */
   evidence?: string[]
   /** Filled when the session is completed and inventory is adjusted. */
-  adjustment?: { before: number, after: number }
+  adjustment?: {
+    before: number
+    after: number
+  }
 }
 
 export type Audit = {
@@ -145,6 +160,10 @@ export type Audit = {
   locationId?: string
   status: string
   items: AuditItem[]
+  itemCount?: number
+  verifiedCount?: number
+  discrepancyCount?: number
+  detailsLoaded?: boolean
   scanLog?: AuditScanEntry[]
   completedAt?: string
   completedBy?: string

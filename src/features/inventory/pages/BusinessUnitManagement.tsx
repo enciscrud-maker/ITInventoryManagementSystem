@@ -55,6 +55,7 @@ export default function BusinessUnitManagement({
   } | null>(null)
   const [deletingUnit, setDeletingUnit] = useState<string | null>(null)
   const [deletingLocation, setDeletingLocation] = useState<string | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
 
   const rows = useMemo(() => {
     const search = query.trim().toLocaleLowerCase()
@@ -242,7 +243,7 @@ export default function BusinessUnitManagement({
                     <p>Locations belong to {selectedUnit.name}.</p>
                   </div>
                   <Button
-                    disabled={!createAllowed}
+                    disabled={!createAllowed || isSaving}
                     onClick={() => setLocationEditor({ name: "" })}
                   >
                     <Plus size={16} /> Add Location
@@ -270,22 +271,30 @@ export default function BusinessUnitManagement({
                       </Button>
                       <Button
                         disabled={
+                          isSaving ||
                           !locationEditor.name.trim() ||
                           (editAllowed &&
                             locations.some(
                               (location) =>
                                 location.id !== locationEditor.id &&
                                 location.name.toLocaleLowerCase() ===
-                                  locationEditor.name.trim().toLocaleLowerCase(),
+                                  locationEditor.name
+                                    .trim()
+                                    .toLocaleLowerCase(),
                             ))
                         }
-                        onClick={() => {
-                          const saved = saveLocation(
-                            locationEditor.name,
-                            selectedUnit.id,
-                            locationEditor.id,
-                          )
-                          if (saved) setLocationEditor(null)
+                        onClick={async () => {
+                          setIsSaving(true)
+                          try {
+                            const saved = await saveLocation(
+                              locationEditor.name,
+                              selectedUnit.id,
+                              locationEditor.id,
+                            )
+                            if (saved) setLocationEditor(null)
+                          } finally {
+                            setIsSaving(false)
+                          }
                         }}
                       >
                         Save Location
@@ -328,9 +337,7 @@ export default function BusinessUnitManagement({
                                 variant="ghost"
                                 disabled={!deleteAllowed}
                                 aria-label={`Delete ${location.name}`}
-                                onClick={() =>
-                                  setDeletingLocation(location.id)
-                                }
+                                onClick={() => setDeletingLocation(location.id)}
                               >
                                 <Trash2 size={14} />
                               </Button>
@@ -361,11 +368,21 @@ export default function BusinessUnitManagement({
               </Button>
               <Button
                 disabled={
-                  !unitName || unitNameIsDuplicate || (!unitEditor.id && !createAllowed)
+                  isSaving ||
+                  !unitName ||
+                  unitNameIsDuplicate ||
+                  (!unitEditor.id && !createAllowed)
                 }
-                onClick={() => {
-                  if (saveBusinessUnit(unitEditor.name, unitEditor.id)) {
-                    if (!unitEditor.id) setUnitEditor(null)
+                onClick={async () => {
+                  setIsSaving(true)
+                  try {
+                    if (
+                      await saveBusinessUnit(unitEditor.name, unitEditor.id)
+                    ) {
+                      if (!unitEditor.id) setUnitEditor(null)
+                    }
+                  } finally {
+                    setIsSaving(false)
                   }
                 }}
               >
@@ -381,9 +398,14 @@ export default function BusinessUnitManagement({
         description="This Business Unit can only be deleted when no Locations or inventory records reference it."
         danger
         onClose={() => setDeletingUnit(null)}
-        onConfirm={() => {
-          if (deletingUnit) deleteBusinessUnit(deletingUnit)
-          setDeletingUnit(null)
+        onConfirm={async () => {
+          if (!deletingUnit) return
+          setIsSaving(true)
+          try {
+            if (await deleteBusinessUnit(deletingUnit)) setDeletingUnit(null)
+          } finally {
+            setIsSaving(false)
+          }
         }}
       />
       <ConfirmDialog
@@ -392,9 +414,15 @@ export default function BusinessUnitManagement({
         description="This Location cannot be deleted while assets, transactions, or stock opname records reference it."
         danger
         onClose={() => setDeletingLocation(null)}
-        onConfirm={() => {
-          if (deletingLocation) deleteLocation(deletingLocation)
-          setDeletingLocation(null)
+        onConfirm={async () => {
+          if (!deletingLocation) return
+          setIsSaving(true)
+          try {
+            if (await deleteLocation(deletingLocation))
+              setDeletingLocation(null)
+          } finally {
+            setIsSaving(false)
+          }
         }}
       />
     </div>

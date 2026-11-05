@@ -21,7 +21,7 @@ export function AuditEvidenceModal({
   readOnly: boolean
   onClose: () => void
   onAdd: (files: File[]) => Promise<void>
-  onRemove: (index: number) => void
+  onRemove?: (index: number) => void
 }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
@@ -57,7 +57,7 @@ export function AuditEvidenceModal({
             <figure key={index}>
               {}
               <img src={src} alt={`Evidence ${index + 1}`} />
-              {!readOnly && (
+              {!readOnly && onRemove && (
                 <Button
                   size="sm"
                   variant="danger"

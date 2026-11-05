@@ -29,6 +29,10 @@ import {
 } from "@/utils/masterData"
 import { AssetForm } from "@/components/assets"
 import {
+  assetsApi,
+  type AssetImportResult as ApiAssetImportResult,
+} from "@/services/api/assets.api"
+import {
   Badge,
   Button,
   EmptyState,
@@ -43,6 +47,8 @@ import {
 
 const allColumns = [
   "Asset ID",
+  "Asset Code",
+  "Asset Prefix",
   "Serial / Tag",
   "Category",
   "Group",
@@ -51,6 +57,7 @@ const allColumns = [
   "Model",
   "Location",
   "Business Unit",
+  "Asset Status",
   "Condition",
   "Quantity",
   "UOM",
@@ -58,6 +65,8 @@ const allColumns = [
 ]
 const columnKeys: Array<keyof Asset> = [
   "id",
+  "assetCode",
+  "assetPrefix",
   "serial",
   "category",
   "group",
@@ -66,15 +75,19 @@ const columnKeys: Array<keyof Asset> = [
   "model",
   "location",
   "businessUnit",
+  "assetStatus",
   "condition",
   "quantity",
   "uom",
   "updatedAt",
 ]
 const typedFilterFields = [
+  "assetCode",
+  "assetPrefix",
   "serial",
   "tag",
   "id",
+  "assetStatus",
   "po",
   "sap",
   "value",
@@ -92,8 +105,11 @@ const filterLabels: Record<string, string> = {
   serial: "Serial Number (SN)",
   tag: "Asset Tag",
   id: "Asset ID",
+  assetCode: "Asset Code",
+  assetPrefix: "Asset Prefix",
   location: "Location",
   businessUnit: "Business Unit",
+  assetStatus: "Asset Status",
   po: "PO Number",
   sap: "SAP Material ID",
   value: "Initial Value",
@@ -150,60 +166,21 @@ const findMasterReference = (
   )
 }
 
-const resolveImportedCondition = (value: string, conditions: MasterItem[]) => {
-  const direct = findMasterReference(conditions, value, [
-    "id",
-    "code",
-    "name",
-  ])
-  if (direct) return direct.name
-
-  const normalized = value.trim().toLowerCase()
-  if (
-    [
-      "active",
-      "aktif",
-      "available",
-      "tersedia",
-      "borrowed",
-      "dipinjam",
-    ].includes(normalized)
-  )
-    return "Good"
-  if (
-    [
-      "repair",
-      "service",
-      "in repair",
-      "dalam perbaikan",
-      "damaged",
-      "rusak",
-    ].includes(normalized)
-  )
-    return "Damaged"
-  if (
-    ["disposal", "disposed", "inactive", "nonactive", "nonaktif"].includes(
-      normalized,
-    )
-  )
-    return "Disposal"
-  return ""
+const resolveImportedAssetStatus = (value: string, statuses: MasterItem[]) => {
+  const status = findMasterReference(statuses, value, ["id", "code", "name"])
+  return status?.active === false ? "" : (status?.name ?? "")
 }
 
 const mapImportRow = ({
   row,
   index,
-  assets,
   master,
   businessUnit,
-  prefixes,
 }: {
   row: AssetImportRow
   index: number
-  assets: Asset[]
   master: Record<string, MasterItem[]>
   businessUnit: string
-  prefixes: Map<string, number>
 }): AssetImportResult => {
   const errors = importHeaders
     .filter((header) => !row[header])
@@ -240,7 +217,14 @@ const mapImportRow = ({
     "code",
     "brand_code",
   ])
-  const condition = resolveImportedCondition(assetStatus, master.conditions)
+  const status = resolveImportedAssetStatus(
+    assetStatus,
+    master.assetStatuses ?? [],
+  )
+  const condition =
+    master.conditions.find(
+      (item) => item.name.trim().toLocaleLowerCase() === "good",
+    )?.name ?? master.conditions[0]?.name
   const prefix = assetPrefix.trim().toUpperCase()
 
   if (categoryCode && !category)
@@ -264,16 +248,9 @@ const mapImportRow = ({
     errors.push("type does not belong to the selected group")
   if (type && brand?.type_id && brand.type_id !== getMasterInternalId(type))
     errors.push("brand does not belong to the selected type")
-  if (assetStatus && !condition)
-    errors.push(`unsupported asset_status "${assetStatus}"`)
-  if (
-    prefix &&
-    assets.some((asset) => asset.id.trim().toUpperCase() === prefix)
-  )
-    errors.push(`duplicate asset_prefix "${assetPrefix}"`)
-  if (prefix && (prefixes.get(prefix) ?? 0) > 1)
-    errors.push(`duplicate asset_prefix "${assetPrefix}" in file`)
-
+  if (assetStatus && !status)
+    errors.push(`unknown asset_status "${assetStatus}"`)
+  if (!condition) errors.push("no asset condition is configured")
   if (errors.length || !category || !group || !type || !brand || !condition)
     return { row: index + 2, source: row, errors }
 
@@ -294,7 +271,8 @@ const mapImportRow = ({
     source: row,
     errors: [],
     asset: {
-      id: prefix,
+      id: "",
+      assetPrefix: prefix,
       serial: `IMP-${prefix}`,
       tag: prefix,
       categoryId: getMasterInternalId(category),
@@ -311,6 +289,10 @@ const mapImportRow = ({
       businessUnit: targetUnit.name,
       businessUnitId: targetUnit.id,
       condition,
+      conditionId: master.conditions.find((item) => item.name === condition)
+        ?.id,
+      assetStatus: status,
+      statusId: master.assetStatuses?.find((item) => item.name === status)?.id,
       quantity: 1,
       uom: "UNIT",
       updatedAt: today(),
@@ -329,7 +311,6 @@ export default function AssetInventory() {
     businessUnit,
     refreshAssets,
     setSelectedAsset,
-    importAssets,
     notify,
     saveAsset,
   } = useInventory()
@@ -354,17 +335,26 @@ export default function AssetInventory() {
   const [moveBusinessUnitId, setMoveBusinessUnitId] = useState("")
   const [importOpen, setImportOpen] = useState(false)
   const [importRows, setImportRows] = useState<AssetImportRow[]>([])
+  const [importFile, setImportFile] = useState<File | null>(null)
   const [importFileName, setImportFileName] = useState("")
   const [importFileError, setImportFileError] = useState("")
+  const [importResult, setImportResult] = useState<ApiAssetImportResult | null>(
+    null,
+  )
+  const [isImporting, setIsImporting] = useState(false)
+  const [isMoving, setIsMoving] = useState(false)
   const filterFields = [
     "category",
     "group",
     "type",
     "brand",
     "model",
+    "assetCode",
+    "assetPrefix",
     "serial",
     "tag",
     "id",
+    "assetStatus",
     "location",
     "businessUnit",
     "po",
@@ -391,8 +381,7 @@ export default function AssetInventory() {
   )
   const availableTypes = master.types.filter(
     (item) =>
-      !selectedGroup ||
-      item.group_id === getMasterInternalId(selectedGroup),
+      !selectedGroup || item.group_id === getMasterInternalId(selectedGroup),
   )
   const availableBrands = master.brands.filter(
     (item) =>
@@ -402,10 +391,8 @@ export default function AssetInventory() {
   )
   const availableModels = master.models.filter(
     (item) =>
-      (!selectedType ||
-      item.type_id === getMasterInternalId(selectedType)) &&
-      (!selectedBrand ||
-      item.brand_id === getMasterInternalId(selectedBrand)),
+      (!selectedType || item.type_id === getMasterInternalId(selectedType)) &&
+      (!selectedBrand || item.brand_id === getMasterInternalId(selectedBrand)),
   )
   const uniqueValues = (key: keyof Asset) =>
     Array.from(new Set(assets.map((a) => String(a[key] ?? "")).filter(Boolean)))
@@ -416,6 +403,9 @@ export default function AssetInventory() {
     brand: uniqueValues("brand"),
     model: uniqueValues("model"),
     businessUnit: uniqueValues("businessUnit"),
+    assetCode: uniqueValues("assetCode"),
+    assetPrefix: uniqueValues("assetPrefix"),
+    assetStatus: uniqueValues("assetStatus"),
     location: Array.from(
       new Set(
         assets
@@ -488,17 +478,21 @@ export default function AssetInventory() {
             a.type,
             a.brand,
             a.model,
+            a.assetCode,
+            a.assetPrefix,
             a.serial,
             a.tag,
             a.id,
             a.location,
             a.businessUnit,
+            a.assetStatus,
             a.po,
             a.sap,
             a.value,
             a.quantity,
             a.uom,
             a.condition,
+            a.assetId,
           ]
             .join(" ")
             .toLowerCase()
@@ -534,6 +528,8 @@ export default function AssetInventory() {
   const readFile = async (file?: File) => {
     if (!file) return
     setImportFileError("")
+    setImportResult(null)
+    setImportFile(file)
     setImportRows([])
     setImportFileName(file.name)
     try {
@@ -556,38 +552,40 @@ export default function AssetInventory() {
     }
   }
   const importResults = useMemo(() => {
-    const prefixes = importRows.reduce((counts, row) => {
-      const prefix = (row.asset_prefix ?? "").trim().toUpperCase()
-      if (prefix) counts.set(prefix, (counts.get(prefix) ?? 0) + 1)
-      return counts
-    }, new Map<string, number>())
     return importRows.map((row, index) =>
       mapImportRow({
         row,
         index,
-        assets,
         master,
         businessUnit,
-        prefixes,
       }),
     )
-  }, [importRows, assets, master, businessUnit])
+  }, [importRows, master, businessUnit])
   const importErrors = importResults.filter((result) => result.errors.length)
   const validImports = importResults.flatMap((result) =>
     result.asset ? [result.asset] : [],
   )
-  const commitImport = () => {
-    if (!validImports.length) return
-    importAssets(validImports)
-    notify(
-      `${validImports.length} assets imported${
-        importErrors.length ? `; ${importErrors.length} rows skipped` : ""
-      }`,
-    )
-    setImportOpen(false)
-    setImportRows([])
-    setImportFileName("")
-    setImportFileError("")
+  const commitImport = async () => {
+    if (!importFile || !importRows.length) return
+    setIsImporting(true)
+    try {
+      const result = await assetsApi.importFile(importFile)
+      if (!result.success) {
+        setImportFileError(result.error)
+        return
+      }
+      setImportResult(result.data)
+      const refreshed = await refreshAssets()
+      notify(
+        `${result.data.successCount} assets imported; ${result.data.failedCount} rows rejected${
+          refreshed ? "" : ". Refresh inventory to load the imported records"
+        }`,
+      )
+      setImportRows([])
+      setImportFile(null)
+    } finally {
+      setIsImporting(false)
+    }
   }
   return (
     <div className="page">
@@ -595,10 +593,7 @@ export default function AssetInventory() {
         title="Asset Inventory"
         subtitle={`Manage, search, and maintain IT asset records · ${filtered.length} matching records`}
         actions={
-          <Button
-            disabled={!createAllowed}
-            onClick={() => setFormAsset(null)}
-          >
+          <Button disabled={!createAllowed} onClick={() => setFormAsset(null)}>
             <Plus size={16} /> Add Asset
           </Button>
         }
@@ -653,8 +648,10 @@ export default function AssetInventory() {
           onClick={() => {
             setImportOpen(true)
             setImportRows([])
+            setImportFile(null)
             setImportFileName("")
             setImportFileError("")
+            setImportResult(null)
           }}
         >
           <Upload size={16} /> Import
@@ -838,7 +835,17 @@ export default function AssetInventory() {
                     </td>
                     {isVisible("Asset ID") && (
                       <td>
-                        <code>{a.id}</code>
+                        <code>{a.assetId ?? a.id}</code>
+                      </td>
+                    )}
+                    {isVisible("Asset Code") && (
+                      <td>
+                        <code>{a.assetCode || "—"}</code>
+                      </td>
+                    )}
+                    {isVisible("Asset Prefix") && (
+                      <td>
+                        <code>{a.assetPrefix || "—"}</code>
                       </td>
                     )}
                     {isVisible("Serial / Tag") && (
@@ -858,6 +865,9 @@ export default function AssetInventory() {
                     )}
                     {isVisible("Location") && <td>{a.location}</td>}
                     {isVisible("Business Unit") && <td>{a.businessUnit}</td>}
+                    {isVisible("Asset Status") && (
+                      <td>{a.assetStatus || "—"}</td>
+                    )}
                     {isVisible("Condition") && (
                       <td>
                         <ConditionBadge
@@ -934,18 +944,9 @@ export default function AssetInventory() {
             <Button
               variant="secondary"
               onClick={() =>
-                downloadCsv("asset-import-template.csv", [
-                  {
-                    category_id: "",
-                    brand_id: "",
-                    group_id: "",
-                    type_id: "",
-                    asset_name: "",
-                    asset_type: "",
-                    asset_status: "active",
-                    asset_prefix: "",
-                  },
-                ])
+                window.location.assign(
+                  "/app-api/backend/api/assets/import-template",
+                )
               }
             >
               Download template
@@ -955,6 +956,26 @@ export default function AssetInventory() {
             <div className="error-summary" role="alert">
               <strong>Import failed</strong>
               <span>{importFileError}</span>
+            </div>
+          )}
+          {importResult && (
+            <div className="import-summary" role="status">
+              <strong>
+                Server processed {importResult.totalRows} rows:{" "}
+                {importResult.successCount} imported, {importResult.failedCount}{" "}
+                rejected.
+              </strong>
+            </div>
+          )}
+          {!!importResult?.errors?.length && (
+            <div className="error-summary" role="alert">
+              <strong>Rows rejected by the server</strong>
+              {importResult.errors.map((error) => (
+                <span key={error.rowNumber}>
+                  Row {error.rowNumber}:{" "}
+                  {error.messages?.join(", ") || "Invalid row"}
+                </span>
+              ))}
             </div>
           )}
           {importRows.length > 0 && (
@@ -1010,8 +1031,13 @@ export default function AssetInventory() {
             <Button variant="secondary" onClick={() => setImportOpen(false)}>
               Cancel
             </Button>
-            <Button disabled={!validImports.length} onClick={commitImport}>
-              Import {validImports.length} valid rows
+            <Button
+              disabled={!importFile || !importRows.length || isImporting}
+              onClick={commitImport}
+            >
+              {isImporting
+                ? "Importing..."
+                : `Import ${importRows.length} rows`}
             </Button>
           </div>
         </div>
@@ -1058,33 +1084,56 @@ export default function AssetInventory() {
             Cancel
           </Button>
           <Button
-            disabled={!moveBusinessUnitId || !moveLocation}
-            onClick={() => {
-              selected.forEach((id) => {
-                const a = assets.find((x) => x.id === id)
-                const unit = master.businessUnits.find(
-                  (item) => item.id === moveBusinessUnitId,
+            disabled={!moveBusinessUnitId || !moveLocation || isMoving}
+            onClick={async () => {
+              const unit = master.businessUnits.find(
+                (item) => item.id === moveBusinessUnitId,
+              )
+              const location = master.locations.find(
+                (item) =>
+                  item.id === moveLocation &&
+                  item.businessUnitId === moveBusinessUnitId,
+              )
+              if (!unit || !location) {
+                notify(
+                  "Choose a Location that belongs to the selected Business Unit",
                 )
-                const location = master.locations.find(
-                  (item) =>
-                    item.id === moveLocation &&
-                    item.businessUnitId === moveBusinessUnitId,
+                return
+              }
+              setIsMoving(true)
+              try {
+                const results = await Promise.all(
+                  selected.map(async (id) => {
+                    const asset = assets.find((item) => item.id === id)
+                    return asset
+                      ? saveAsset({
+                          ...asset,
+                          businessUnit: unit.name,
+                          businessUnitId: unit.id,
+                          location: location.name,
+                          locationId: location.id,
+                          updatedAt: today(),
+                        })
+                      : false
+                  }),
                 )
-                if (a && unit && location)
-                  saveAsset({
-                    ...a,
-                    businessUnit: unit.name,
-                    businessUnitId: unit.id,
-                    location: location.name,
-                    locationId: location.id,
-                    updatedAt: today(),
-                  })
-              })
-              setSelected([])
-              setMoveOpen(false)
+                const updatedCount = results.filter(Boolean).length
+                const failedCount = results.length - updatedCount
+                if (!failedCount) {
+                  setSelected([])
+                  setMoveOpen(false)
+                }
+                notify(
+                  `${updatedCount} assets moved${
+                    failedCount ? `; ${failedCount} failed` : ""
+                  }`,
+                )
+              } finally {
+                setIsMoving(false)
+              }
             }}
           >
-            Confirm Move
+            {isMoving ? "Moving..." : "Confirm Move"}
           </Button>
         </div>
       </Modal>

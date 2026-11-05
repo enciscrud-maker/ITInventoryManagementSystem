@@ -23,11 +23,7 @@ import {
 import type { Audit } from "@/data/demoData"
 import { downloadCsv, today } from "@/utils/helpers"
 import { getLocationsForBusinessUnit } from "@/utils/masterData"
-import {
-  MAX_EVIDENCE_PER_ASSET,
-  buildHistoricalMap,
-  compressImage,
-} from "@/utils/audit"
+import { MAX_EVIDENCE_PER_ASSET, buildHistoricalMap } from "@/utils/audit"
 import { exportEvidencePdf } from "@/utils/auditPdf"
 import { AuditScanner } from "@/components/AuditScanner"
 import { AuditImportModal } from "@/components/AuditImportModal"
@@ -48,11 +44,17 @@ import {
 export default function Audits() {
   const {
     audits,
+    auditDataStatus,
+    auditDataError,
     assets,
     master,
     businessUnit,
+    refreshAudits,
+    loadAuditDetails,
     saveAudit,
     updateAuditItem,
+    uploadAuditEvidence,
+    removeAuditEvidence,
     scanAuditAsset,
     importAuditQuantities,
     resolveUnscannedAudit,
@@ -71,6 +73,8 @@ export default function Audits() {
   const [importOpen, setImportOpen] = useState(false)
   const [evidenceFor, setEvidenceFor] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
+  const [creating, setCreating] = useState(false)
+  const [completing, setCompleting] = useState(false)
   const [search, setSearch] = useState("")
   const [draft, setDraft] = useState({
     name: "",
@@ -79,47 +83,37 @@ export default function Audits() {
     businessUnitId: "",
     location: "All Locations",
     locationId: "",
-    auditor: "",
   })
-  const selected = audits.find(
-    (a) =>
-      a.id ===
-      selectedId,
-  )
+  const selected = audits.find((a) => a.id === selectedId)
   const historical = useMemo(
-    () =>
-      buildHistoricalMap(
-        audits,
-        selectedId ??
-          "",
-      ),
+    () => buildHistoricalMap(audits, selectedId ?? ""),
     [audits, selectedId],
   )
   const scopedAudits = audits.filter(
     (a) =>
-      (businessUnit ===
-        "All Business Units" ||
-        a.businessUnitId ===
-          businessUnit) &&
+      (businessUnit === "All Business Units" ||
+        a.businessUnitId === businessUnit) &&
       (!search ||
         [a.name, a.id, a.auditor]
           .join(" ")
           .toLowerCase()
           .includes(search.toLowerCase())),
   )
-  const createAudit = () => {
+  const createAudit = async () => {
     const scoped = assets.filter(
       (a) =>
         a.businessUnitId === draft.businessUnitId &&
         (!draft.locationId || a.locationId === draft.locationId),
     )
     const audit: Audit = {
-      id: `AUD-${Date.now()}`,
+      id: "",
       ...draft,
+      auditor: currentUser.name,
       status: "In Progress",
       scanLog: [],
       items: scoped.map((a) => ({
         assetId: a.id,
+        assetCode: a.assetCode,
         systemQty: a.quantity,
         systemLocation: a.location,
         systemLocationId: a.locationId,
@@ -132,58 +126,48 @@ export default function Audits() {
         evidence: [],
       })),
     }
-    saveAudit(audit)
-    setSelectedId(audit.id)
-    setCreate(false)
+    if (!scoped.length) {
+      notify("No assets match this Business Unit and Location scope")
+      return
+    }
+    setCreating(true)
+    try {
+      const saved = await saveAudit(audit)
+      if (!saved) return
+      setSelectedId(saved.id)
+      setCreate(false)
+    } finally {
+      setCreating(false)
+    }
+  }
+  const openAudit = async (id: string) => {
+    const detail = await loadAuditDetails(id)
+    if (detail) setSelectedId(detail.id)
   }
 
   if (selected) {
-    const locked =
-      selected.status ===
-      "Completed"
-    const editable =
-      !locked &&
-      canUpdate(currentUser)
+    const locked = selected.status === "Completed"
+    const editable = !locked && canUpdate(currentUser)
     const verified = selected.items.filter(
-      (i) =>
-        i.finding !==
-        "Unverified",
+      (i) => i.finding !== "Unverified",
     ).length
     const confirmedCount = selected.items.filter((i) => i.confirmed).length
     const unscanned = selected.items.filter(
-      (i) =>
-        i.physicalQty ===
-        null,
+      (i) => i.physicalQty === null,
     ).length
     const counts = (name: string) =>
-      selected.items.filter(
-        (i) =>
-          i.finding ===
-          name,
-      ).length
+      selected.items.filter((i) => i.finding === name).length
     const query = search.toLowerCase()
     const filteredItems = selected.items.filter((i) => {
       if (!query) return true
-      const asset = assets.find(
-        (a) =>
-          a.id ===
-          i.assetId,
-      )
+      const asset = assets.find((a) => a.id === i.assetId)
       return [i.assetId, asset?.brand, asset?.model, asset?.serial]
         .join(" ")
         .toLowerCase()
         .includes(query)
     })
-    const evidenceItem = selected.items.find(
-      (i) =>
-        i.assetId ===
-        evidenceFor,
-    )
-    const evidenceAsset = assets.find(
-      (a) =>
-        a.id ===
-        evidenceFor,
-    )
+    const evidenceItem = selected.items.find((i) => i.assetId === evidenceFor)
+    const evidenceAsset = assets.find((a) => a.id === evidenceFor)
     const confirmedItems = selected.items.filter((i) => i.confirmed)
     const impact = {
       confirmed: confirmedItems.length,
@@ -246,10 +230,13 @@ export default function Audits() {
       const slots = MAX_EVIDENCE_PER_ASSET - current
       if (slots <= 0)
         throw new Error(`Maximum ${MAX_EVIDENCE_PER_ASSET} photos per asset`)
-      const images = await Promise.all(
-        files.slice(0, slots).map((file) => compressImage(file)),
+      const uploads = await Promise.all(
+        files
+          .slice(0, slots)
+          .map((file) => uploadAuditEvidence(selected.id, assetId, file)),
       )
-      updateAuditItem(selected.id, assetId, { addEvidence: images })
+      if (uploads.some((uploaded) => !uploaded))
+        throw new Error("One or more evidence files could not be uploaded")
       if (files.length > slots)
         notify(`Only ${slots} photo(s) added (limit ${MAX_EVIDENCE_PER_ASSET})`)
     }
@@ -264,7 +251,10 @@ export default function Audits() {
               <Button
                 variant="secondary"
                 className="col-span-2 sm:col-auto"
-                onClick={() => setSelectedId(null)}
+                onClick={() => {
+                  setSelectedId(null)
+                  void refreshAudits()
+                }}
               >
                 Back to sessions
               </Button>
@@ -286,7 +276,11 @@ export default function Audits() {
                   </Button>
                 </>
               )}
-              <Button variant="secondary" disabled={exporting} onClick={exportEvidence}>
+              <Button
+                variant="secondary"
+                disabled={exporting}
+                onClick={exportEvidence}
+              >
                 <FileText size={16} />{" "}
                 {exporting ? "Building PDF…" : "Export Evidence"}
               </Button>
@@ -297,7 +291,11 @@ export default function Audits() {
                 <Button
                   className="col-span-2 sm:col-auto"
                   disabled={!approver}
-                  title={approver ? undefined : "Only approvers can complete a stock opname"}
+                  title={
+                    approver
+                      ? undefined
+                      : "Only approvers can complete a stock opname"
+                  }
                   onClick={() => setComplete(true)}
                 >
                   <CheckCircle2 size={16} /> Complete Audit
@@ -536,12 +534,10 @@ export default function Audits() {
           readOnly={!editable}
           onClose={() => setEvidenceFor(null)}
           onAdd={(files) => addEvidence(evidenceFor ?? "", files)}
-          onRemove={(index) =>
-            evidenceFor &&
-            updateAuditItem(selected.id, evidenceFor, {
-              removeEvidenceAt: index,
-            })
-          }
+          onRemove={(index) => {
+            if (evidenceFor)
+              void removeAuditEvidence(selected.id, evidenceFor, index)
+          }}
         />
         <AuditImportModal
           open={importOpen}
@@ -602,12 +598,18 @@ export default function Audits() {
               Cancel
             </Button>
             <Button
-              onClick={() => {
-                if (completeAudit(selected.id, { updateLocation }))
-                  setComplete(false)
+              disabled={completing}
+              onClick={async () => {
+                setCompleting(true)
+                try {
+                  if (await completeAudit(selected.id, { updateLocation }))
+                    setComplete(false)
+                } finally {
+                  setCompleting(false)
+                }
               }}
             >
-              Complete Audit
+              {completing ? "Completing..." : "Complete Audit"}
             </Button>
           </div>
         </Modal>
@@ -624,9 +626,8 @@ export default function Audits() {
             disabled={!canCreateInModule(currentUser, "stock-opname")}
             onClick={() => {
               const unit =
-                master.businessUnits.find(
-                  (item) => item.id === businessUnit,
-                ) ?? master.businessUnits[0]
+                master.businessUnits.find((item) => item.id === businessUnit) ??
+                master.businessUnits[0]
               setDraft({
                 name: "",
                 date: today(),
@@ -634,7 +635,6 @@ export default function Audits() {
                 businessUnitId: unit?.id ?? "",
                 location: "All Locations",
                 locationId: "",
-                auditor: "",
               })
               setCreate(true)
             }}
@@ -649,7 +649,20 @@ export default function Audits() {
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search session, ID, auditor..."
         />
+        <Button
+          variant="secondary"
+          disabled={auditDataStatus === "loading"}
+          onClick={() => void refreshAudits()}
+        >
+          {auditDataStatus === "loading" ? "Refreshing..." : "Refresh"}
+        </Button>
       </div>
+      {auditDataStatus === "error" && (
+        <div className="error-summary" role="alert">
+          <strong>Stock Opname could not be loaded</strong>
+          <span>{auditDataError}</span>
+        </div>
+      )}
       <section className="table-card">
         <div className="table-scroll">
           <table>
@@ -669,14 +682,15 @@ export default function Audits() {
             </thead>
             <tbody>
               {scopedAudits.map((a) => {
-                const verified = a.items.filter(
-                  (i) => i.finding !== "Unverified",
-                ).length
-                const pct = a.items.length
-                  ? Math.round((verified / a.items.length) * 100)
-                  : 0
+                const total = a.itemCount ?? a.items.length
+                const hasVerifiedCount =
+                  a.verifiedCount !== undefined || a.detailsLoaded
+                const verified =
+                  a.verifiedCount ??
+                  a.items.filter((i) => i.finding !== "Unverified").length
+                const pct = total ? Math.round((verified / total) * 100) : 0
                 return (
-                  <tr key={a.id} onClick={() => setSelectedId(a.id)}>
+                  <tr key={a.id} onClick={() => void openAudit(a.id)}>
                     <td>
                       <strong>{a.name}</strong>
                       <small>{a.id}</small>
@@ -685,17 +699,31 @@ export default function Audits() {
                     <td>{a.auditor}</td>
                     <td>{a.businessUnit}</td>
                     <td>{a.location}</td>
-                    <td>{a.items.length}</td>
-                    <td>{verified}</td>
+                    <td>{total}</td>
+                    <td>{hasVerifiedCount ? verified : "—"}</td>
                     <td>
-                      <progress className="progress" value={pct} max="100" />
-                      <small>{pct}%</small>
+                      {hasVerifiedCount ? (
+                        <>
+                          <progress
+                            className="progress"
+                            value={pct}
+                            max="100"
+                          />
+                          <small>{pct}%</small>
+                        </>
+                      ) : (
+                        <small>—</small>
+                      )}
                     </td>
                     <td>
                       <Badge>{a.status}</Badge>
                     </td>
                     <td>
-                      <Button size="sm" variant="ghost">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => void openAudit(a.id)}
+                      >
                         Open
                       </Button>
                     </td>
@@ -773,13 +801,6 @@ export default function Audits() {
               })),
             ]}
           />
-          <Input
-            label="Assigned auditor *"
-            value={draft.auditor}
-            onChange={(e) =>
-              setDraft((v) => ({ ...v, auditor: e.target.value }))
-            }
-          />
         </div>
         <div className="scope-preview">
           {
@@ -796,10 +817,19 @@ export default function Audits() {
             Cancel
           </Button>
           <Button
-            disabled={!draft.name || !draft.auditor}
+            disabled={
+              !draft.name ||
+              !draft.businessUnitId ||
+              creating ||
+              !assets.some(
+                (asset) =>
+                  asset.businessUnitId === draft.businessUnitId &&
+                  (!draft.locationId || asset.locationId === draft.locationId),
+              )
+            }
             onClick={createAudit}
           >
-            Create Session
+            {creating ? "Creating..." : "Create Session"}
           </Button>
         </div>
       </Modal>

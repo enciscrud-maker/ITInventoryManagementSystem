@@ -24,7 +24,6 @@ import {
   useState,
 } from "react"
 import {
-  demoAudits,
   demoMaster,
   type Asset,
   type Audit,
@@ -86,20 +85,40 @@ import {
 import {
   recordDataActivity,
   summarizeChanges,
-  type ActivityChange,
 } from "../services/historyService"
 import {
   getCachedMasterData,
+  invalidateMasterDataCache,
   type MasterDataSnapshot,
 } from "@/services/api/masterDataCache"
-import { toMasterItems } from "@/services/api/mappers/master-data.mapper"
+import {
+  toBusinessUnitItem,
+  toLocationItem,
+  toMasterItems,
+} from "@/services/api/mappers/master-data.mapper"
 import { assetsApi } from "@/services/api/assets.api"
+import { businessUnitsApi, locationsApi } from "@/services/api/masterData.api"
 import { transactionsApi } from "@/services/api/transactions.api"
+import { stockAuditsApi } from "@/services/api/stockAudits.api"
 
 type State = {
   assets: Asset[]
   transactions: Transaction[]
   audits: Audit[]
+  auditDataStatus: "loading" | "ready" | "error"
+  auditDataError: string
+  refreshAudits: () => Promise<boolean>
+  loadAuditDetails: (id: string) => Promise<Audit | null>
+  uploadAuditEvidence: (
+    auditId: string,
+    assetId: string,
+    file: File,
+  ) => Promise<boolean>
+  removeAuditEvidence: (
+    auditId: string,
+    assetId: string,
+    index: number,
+  ) => Promise<boolean>
   master: Record<string, MasterItem[]>
   businessUnit: string
   theme: "light" | "dark"
@@ -111,7 +130,7 @@ type State = {
   masterDataRefreshing: boolean
   refreshMasterData: () => Promise<boolean>
   refreshAssets: () => Promise<boolean>
-  saveAsset: (asset: Asset) => void
+  saveAsset: (asset: Asset) => Promise<boolean>
   saveTransaction: (tx: Transaction, files?: File[]) => Promise<boolean>
   updateTransactionStatus: (
     id: string,
@@ -123,7 +142,7 @@ type State = {
     direction: Transaction["direction"],
     id: string,
   ) => Promise<Transaction | null>
-  saveAudit: (audit: Audit) => void
+  saveAudit: (audit: Audit) => Promise<Audit | null>
   updateAuditItem: (
     auditId: string,
     assetId: string,
@@ -141,19 +160,22 @@ type State = {
   completeAudit: (
     auditId: string,
     options?: { updateLocation?: boolean },
-  ) => boolean
+  ) => Promise<boolean>
   setBusinessUnit: (v: string) => void
   setTheme: (v: "light" | "dark") => void
   setSidebarCollapsed: (v: boolean) => void
   setSelectedAsset: (v: Asset | null) => void
   notify: (v: string) => void
-  importAssets: (v: Asset[]) => void
   saveMaster: (key: MasterKey, item: MasterItem) => boolean
   deleteMaster: (key: MasterKey, id: string) => boolean
-  saveBusinessUnit: (name: string, id?: string) => boolean
-  saveLocation: (name: string, businessUnitId: string, id?: string) => boolean
-  deleteBusinessUnit: (id: string) => boolean
-  deleteLocation: (id: string) => boolean
+  saveBusinessUnit: (name: string, id?: string) => Promise<boolean>
+  saveLocation: (
+    name: string,
+    businessUnitId: string,
+    id?: string,
+  ) => Promise<boolean>
+  deleteBusinessUnit: (id: string) => Promise<boolean>
+  deleteLocation: (id: string) => Promise<boolean>
 }
 
 const Context = createContext<State | null>(null)
@@ -211,11 +233,10 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
   const { currentUser } = useAuth()
   const [assets, setAssets] = useState<Asset[]>([])
   const [transactions, setTransactions] = useState<Transaction[]>([])
-  const [audits, setAudits] = useState(() =>
-    read<Audit[]>("iti-audits", demoAudits).map((audit) =>
-      normalizeAudit(audit, assets),
-    ),
-  )
+  const [audits, setAudits] = useState<Audit[]>([])
+  const [auditDataStatus, setAuditDataStatus] =
+    useState<"loading" | "ready" | "error">("loading")
+  const [auditDataError, setAuditDataError] = useState("")
   const auditsRef = useRef(audits)
   auditsRef.current = audits
   const [master, setMaster] = useState(() =>
@@ -256,15 +277,6 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
   const masterDataLoaded = useRef(false)
   const appliedMasterData = useRef<MasterDataSnapshot | null>(null)
   const masterDataScope = useRef(currentUser.id)
-  useEffect(() => {
-    try {
-      localStorage.setItem("iti-audits", JSON.stringify(audits))
-    } catch {
-      setToast(
-        "Browser storage is full. Latest stock opname changes (e.g. evidence photos) could not be saved.",
-      )
-    }
-  }, [audits])
   useEffect(() => {
     localStorage.setItem(
       "iti-master",
@@ -390,6 +402,49 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     void refreshAssets()
   }, [refreshAssets])
+  const refreshAudits = useCallback(async () => {
+    setAuditDataStatus("loading")
+    const result = await stockAuditsApi.list({}, [], master.locations)
+    if (!result.success) {
+      setAuditDataError(result.error)
+      setAuditDataStatus("error")
+      return false
+    }
+    const existing = new Map(
+      auditsRef.current
+        .filter((audit) => audit.detailsLoaded)
+        .map((audit) => [audit.id, audit]),
+    )
+    const next = result.data.map((audit) => {
+      const detailed = existing.get(audit.id)
+      return detailed ? { ...detailed, ...audit, items: detailed.items } : audit
+    })
+    auditsRef.current = next
+    setAudits(next)
+    setAuditDataError("")
+    setAuditDataStatus("ready")
+    return true
+  }, [master.locations])
+  useEffect(() => {
+    void refreshAudits()
+  }, [currentUser.id, refreshAudits])
+  const loadAuditDetails = useCallback(
+    async (id: string) => {
+      const result = await stockAuditsApi.getById(id, assets, master.locations)
+      if (!result.success) {
+        notify(result.error)
+        return null
+      }
+      const detail = normalizeAudit(result.data, assets)
+      const next = auditsRef.current.some((audit) => audit.id === id)
+        ? auditsRef.current.map((audit) => (audit.id === id ? detail : audit))
+        : [detail, ...auditsRef.current]
+      auditsRef.current = next
+      setAudits(next)
+      return detail
+    },
+    [assets, master.locations, notify],
+  )
   const refreshTransactions = useCallback(async () => {
     const [goodsInResult, goodsOutResult] = await Promise.all([
       transactionsApi.list("In"),
@@ -488,10 +543,10 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       document.removeEventListener("visibilitychange", refreshIfVisible)
     }
   }, [refreshMasterData])
-  const saveAsset = (asset: Asset) => {
+  const saveAsset = async (asset: Asset) => {
     if (!master.conditions.some((item) => item.name === asset.condition)) {
       notify("Select a valid Condition from Master Data")
-      return
+      return false
     }
     const businessUnit = master.businessUnits.find(
       (unit) => unit.id === asset.businessUnitId,
@@ -502,13 +557,16 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     ).find((item) => item.id === asset.locationId)
     if (!businessUnit || !location) {
       notify("Select a Location that belongs to the selected Business Unit")
-      return
+      return false
     }
     const normalizedAsset = normalizeAssetClassification(
       {
         ...asset,
         businessUnit: businessUnit.name,
         location: location.name,
+        conditionId: master.conditions.find(
+          (item) => item.name === asset.condition,
+        )?.id,
       },
       master,
     )
@@ -524,26 +582,39 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       !isAssetClassificationValid(normalizedAsset, master)
     ) {
       notify("Asset classification references are no longer valid")
-      return
+      return false
     }
-    const existing = assets.find((item) => item.id === normalizedAsset.id)
+    const existing = normalizedAsset.id
+      ? assets.find((item) => item.id === normalizedAsset.id)
+      : undefined
     if (
       existing
         ? !canManageExisting(currentUser)
         : !canCreateInModule(currentUser, "asset-inventory")
     ) {
       notify("You do not have permission to save this asset")
-      return
+      return false
     }
-    setAssets((v) =>
-      v.some((a) => a.id === normalizedAsset.id)
-        ? v.map((a) => (a.id === normalizedAsset.id ? normalizedAsset : a))
-        : [normalizedAsset, ...v],
+    const result = existing
+      ? await assetsApi.update(normalizedAsset)
+      : await assetsApi.create(normalizedAsset)
+    if (!result.success) {
+      notify(result.error)
+      return false
+    }
+    const savedAsset = result.data
+    setAssets((value) =>
+      existing
+        ? value.map((item) => (item.id === existing.id ? savedAsset : item))
+        : [savedAsset, ...value],
+    )
+    setSelectedAsset((current) =>
+      current?.id === savedAsset.id ? savedAsset : current,
     )
     const changes = existing
       ? summarizeChanges(
           existing as unknown as Record<string, unknown>,
-          normalizedAsset as unknown as Record<string, unknown>,
+          savedAsset as unknown as Record<string, unknown>,
         )
       : undefined
     if (!existing || Object.keys(changes ?? {}).length) {
@@ -551,12 +622,15 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         actor: currentUser,
         module: "Asset Inventory",
         action: existing ? "Update" : "Create",
-        recordId: normalizedAsset.id,
-        recordLabel: `${normalizedAsset.brand} ${normalizedAsset.model}`,
+        recordId: savedAsset.id,
+        recordLabel: `${savedAsset.brand} ${savedAsset.model}`,
         changes,
       })
     }
-    notify("Asset saved successfully")
+    notify(
+      existing ? "Asset updated successfully" : "Asset created successfully",
+    )
+    return true
   }
   const saveTransaction = async (
     transaction: Transaction,
@@ -821,7 +895,75 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     auditsRef.current.find((item) => item.id === auditId)
   const newId = (prefix: string) =>
     `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-  const saveAudit = (audit: Audit) => {
+  const auditSyncTimers = useRef(new Map<string, number>())
+  const auditSyncQueues = useRef(new Map<string, Promise<boolean>>())
+  const persistAuditItems = async (auditId: string) => {
+    const audit = findAudit(auditId)
+    if (!audit) return false
+    const result = await stockAuditsApi.updateItems(
+      audit,
+      assets,
+      master.locations,
+    )
+    if (!result.success) {
+      notify(`Stock Opname changes were not saved: ${result.error}`)
+      return false
+    }
+    const itemIds = new Map(
+      result.data.items.map((item) => [item.assetId, item.apiItemId]),
+    )
+    if (findAudit(auditId)) {
+      commitAudits((list) =>
+        list.map((entry) =>
+          entry.id === auditId
+            ? {
+                ...entry,
+                items: entry.items.map((item) => ({
+                  ...item,
+                  apiItemId: itemIds.get(item.assetId) ?? item.apiItemId,
+                })),
+              }
+            : entry,
+        ),
+      )
+    }
+    return true
+  }
+  const scheduleAuditItemsSave = (auditId: string) => {
+    const timer = auditSyncTimers.current.get(auditId)
+    if (timer) window.clearTimeout(timer)
+    const nextTimer = window.setTimeout(() => {
+      auditSyncTimers.current.delete(auditId)
+      const previous =
+        auditSyncQueues.current.get(auditId) ?? Promise.resolve(true)
+      const next = previous
+        .catch(() => false)
+        .then(() => persistAuditItems(auditId))
+        .catch((error: unknown) => {
+          notify(
+            error instanceof Error
+              ? `Stock Opname changes were not saved: ${error.message}`
+              : "Stock Opname changes were not saved because of an unexpected error.",
+          )
+          return false
+        })
+      auditSyncQueues.current.set(auditId, next)
+    }, 350)
+    auditSyncTimers.current.set(auditId, nextTimer)
+  }
+  const flushAuditItems = async (auditId: string) => {
+    const timer = auditSyncTimers.current.get(auditId)
+    if (timer) {
+      window.clearTimeout(timer)
+      auditSyncTimers.current.delete(auditId)
+    }
+    const previous = auditSyncQueues.current.get(auditId)
+    if (previous && !(await previous)) return false
+    const saved = await persistAuditItems(auditId)
+    auditSyncQueues.current.delete(auditId)
+    return saved
+  }
+  const saveAudit = async (audit: Audit) => {
     const existing = findAudit(audit.id)
     if (
       existing
@@ -829,7 +971,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         : !canCreateInModule(currentUser, "stock-opname")
     ) {
       notify("You do not have permission to save this stock opname")
-      return
+      return null
     }
     const auditBusinessUnit = master.businessUnits.find(
       (unit) => unit.id === audit.businessUnitId,
@@ -842,11 +984,11 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       : undefined
     if (!auditBusinessUnit || (audit.locationId && !auditLocation)) {
       notify("Select a valid Business Unit and a Location belonging to it")
-      return
+      return null
     }
     if (audit.status === "Completed" || existing?.status === "Completed") {
       notify("Completed sessions are locked. Use Complete Audit to finish one.")
-      return
+      return null
     }
     const approvesSomething = audit.items.some(
       (item) =>
@@ -855,7 +997,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     )
     if (approvesSomething && !canApprove(currentUser)) {
       notify("Only approvers can confirm stock opname results")
-      return
+      return null
     }
     const hasNewMissingAsset = audit.items.some(
       (item) =>
@@ -866,7 +1008,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     )
     if (hasNewMissingAsset) {
       notify("Stock opname contains an asset that no longer exists")
-      return
+      return null
     }
     const next = normalizeAudit(
       {
@@ -876,19 +1018,32 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       },
       assets,
     )
+    const result = existing
+      ? await stockAuditsApi.updateItems(next, assets, master.locations)
+      : await stockAuditsApi.create(next, assets, master.locations)
+    if (!result.success) {
+      notify(result.error)
+      return null
+    }
+    const saved = {
+      ...result.data,
+      auditor: result.data.auditor || audit.auditor,
+      detailsLoaded: true,
+    }
     commitAudits((list) =>
       existing
-        ? list.map((a) => (a.id === next.id ? next : a))
-        : [next, ...list],
+        ? list.map((a) => (a.id === saved.id ? saved : a))
+        : [saved, ...list],
     )
     recordDataActivity({
       actor: currentUser,
       module: "Stock Opname",
       action: existing ? "Update" : "Create",
-      recordId: audit.id,
-      recordLabel: audit.name,
+      recordId: saved.id,
+      recordLabel: saved.name,
     })
     notify(existing ? "Audit progress saved" : "Audit session created")
+    return saved
   }
 
   const updateAuditItem = (
@@ -901,7 +1056,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     if (!audit || !item) return
     if (audit.status === "Completed") {
       notify("Completed sessions are locked")
-      return
+      return null
     }
     if (!canManageExisting(currentUser)) {
       notify("You do not have permission to update this stock opname")
@@ -999,6 +1154,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
           : a,
       ),
     )
+    scheduleAuditItemsSave(auditId)
   }
   const scanAuditAsset = (auditId: string, code: string): AuditScanResult => {
     const audit = findAudit(auditId)
@@ -1008,11 +1164,20 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     if (!canManageExisting(currentUser))
       return { ok: false, message: "You do not have permission to scan" }
     const clean = code.trim()
-    const assetId = matchAssetId(
+    const assetIdByInternalId = matchAssetId(
       clean,
       audit.items.map((item) => item.assetId),
       true,
     )
+    const scannedCode = clean.toLocaleUpperCase()
+    const assetIdByCode = audit.items.find((item) => {
+      const assetCode = item.assetCode?.toLocaleUpperCase()
+      return (
+        assetCode === scannedCode ||
+        Boolean(assetCode && scannedCode.includes(assetCode))
+      )
+    })?.assetId
+    const assetId = assetIdByInternalId ?? assetIdByCode
     if (!assetId)
       return {
         ok: false,
@@ -1042,6 +1207,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
           : a,
       ),
     )
+    scheduleAuditItemsSave(auditId)
     return {
       ok: true,
       assetId,
@@ -1109,6 +1275,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
           : a,
       ),
     )
+    scheduleAuditItemsSave(auditId)
     recordDataActivity({
       actor: currentUser,
       module: "Stock Opname",
@@ -1145,6 +1312,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
           : a,
       ),
     )
+    scheduleAuditItemsSave(auditId)
     recordDataActivity({
       actor: currentUser,
       module: "Stock Opname",
@@ -1158,10 +1326,118 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     notify(`${pending.length} uncounted assets marked as physical qty 0`)
     return pending.length
   }
-  const completeAudit = (
+  const uploadAuditEvidence = async (
+    auditId: string,
+    assetId: string,
+    file: File,
+  ) => {
+    const audit = findAudit(auditId)
+    if (!audit || audit.status === "Completed") {
+      notify("This session is locked")
+      return false
+    }
+    if (!canManageExisting(currentUser)) {
+      notify("You do not have permission to upload evidence")
+      return false
+    }
+    if (
+      !["image/jpeg", "image/png"].includes(file.type) ||
+      file.size > 10 * 1024 * 1024
+    ) {
+      notify("Evidence must be a PNG or JPEG file no larger than 10 MB")
+      return false
+    }
+    let item = audit.items.find((candidate) => candidate.assetId === assetId)
+    if (!item) return false
+    if (!item.apiItemId) {
+      if (!(await flushAuditItems(auditId))) return false
+      item = findAudit(auditId)?.items.find(
+        (candidate) => candidate.assetId === assetId,
+      )
+    }
+    if (!item?.apiItemId) {
+      notify("Save this audit item before uploading evidence")
+      return false
+    }
+    const result = await stockAuditsApi.uploadEvidence(
+      auditId,
+      item.apiItemId,
+      file,
+    )
+    if (!result.success) {
+      notify(result.error)
+      return false
+    }
+    const evidencePath =
+      result.data.evidencePath ?? result.data.evidencePaths?.at(-1)
+    if (!evidencePath) {
+      notify("The server did not return an accessible evidence path")
+      return false
+    }
+    commitAudits((list) =>
+      list.map((entry) =>
+        entry.id === auditId
+          ? {
+              ...entry,
+              items: entry.items.map((candidate) =>
+                candidate.assetId === assetId
+                  ? {
+                      ...candidate,
+                      apiItemId: String(result.data.stockOpnameDetailId),
+                      evidence: [...(candidate.evidence ?? []), evidencePath],
+                    }
+                  : candidate,
+              ),
+            }
+          : entry,
+      ),
+    )
+    return true
+  }
+  const removeAuditEvidence = async (
+    auditId: string,
+    assetId: string,
+    index: number,
+  ) => {
+    const audit = findAudit(auditId)
+    const item = audit?.items.find((candidate) => candidate.assetId === assetId)
+    const evidencePath = item?.evidence?.[index]
+    if (!audit || audit.status === "Completed" || !item || !evidencePath)
+      return false
+    if (!canManageExisting(currentUser)) {
+      notify("You do not have permission to remove evidence")
+      return false
+    }
+    const result = await stockAuditsApi.deleteEvidence(evidencePath)
+    if (!result.success) {
+      notify(result.error)
+      return false
+    }
+    commitAudits((list) =>
+      list.map((entry) =>
+        entry.id === auditId
+          ? {
+              ...entry,
+              items: entry.items.map((candidate) =>
+                candidate.assetId === assetId
+                  ? {
+                      ...candidate,
+                      evidence: (candidate.evidence ?? []).filter(
+                        (_, currentIndex) => currentIndex !== index,
+                      ),
+                    }
+                  : candidate,
+              ),
+            }
+          : entry,
+      ),
+    )
+    return true
+  }
+  const completeAudit = async (
     auditId: string,
     options?: { updateLocation?: boolean },
-  ) => {
+  ): Promise<boolean> => {
     const audit = findAudit(auditId)
     if (!audit || audit.status === "Completed" || audit.inventoryAdjusted)
       return false
@@ -1169,90 +1445,18 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       notify("Only approvers can complete a stock opname")
       return false
     }
-    const day = today()
-    const adjustments = new Map<string, {
-      before: number
-      after: number
-      location?: string
-      locationId?: string
-    }>()
-    const items = audit.items.map((item) => {
-      let next = item
-      if (next.physicalQty === null)
-        next = recalcItem({ ...next, physicalQty: 0 })
-      if (next.confirmed && next.physicalQty !== null) {
-        const asset = assets.find((a) => a.id === next.assetId)
-        if (asset) {
-          adjustments.set(asset.id, {
-            before: asset.quantity,
-            after: next.physicalQty,
-            location:
-              options?.updateLocation && next.actualLocationId
-                ? next.actualLocation
-                : undefined,
-            locationId:
-              options?.updateLocation && next.actualLocationId
-                ? next.actualLocationId
-                : undefined,
-          })
-          next = {
-            ...next,
-            adjustment: { before: asset.quantity, after: next.physicalQty },
-          }
-        }
-      }
-      return next
-    })
-    if (adjustments.size)
-      setAssets((value) =>
-        value.map((asset) => {
-          const change = adjustments.get(asset.id)
-          if (!change) return asset
-          return {
-            ...asset,
-            quantity: change.after,
-            location: change.location ?? asset.location,
-            locationId: change.locationId ?? asset.locationId,
-            updatedAt: day,
-          }
-        }),
-      )
-    const completedAt = new Date().toISOString()
-    commitAudits((list) =>
-      list.map((a) =>
-        a.id === auditId
-          ? {
-              ...a,
-              items,
-              status: "Completed",
-              completedAt,
-              completedBy: currentUser.name,
-              inventoryAdjusted: true,
-            }
-          : a,
-      ),
+    if (!(await flushAuditItems(auditId))) return false
+    const result = await stockAuditsApi.complete(
+      auditId,
+      options?.updateLocation ?? false,
+      assets,
+      master.locations,
     )
-    adjustments.forEach((change, assetId) => {
-      const asset = assets.find((a) => a.id === assetId)
-      if (!asset) return
-      const changes: Record<string, ActivityChange> = {}
-      if (change.before !== change.after)
-        changes.quantity = {
-          before: String(change.before),
-          after: String(change.after),
-        }
-      if (change.location && change.location !== asset.location)
-        changes.location = { before: asset.location, after: change.location }
-      if (!Object.keys(changes).length) return
-      recordDataActivity({
-        actor: currentUser,
-        module: "Asset Inventory",
-        action: "Update",
-        recordId: asset.id,
-        recordLabel: `${asset.brand} ${asset.model} (Stock Opname ${audit.id})`,
-        changes,
-      })
-    })
+    if (!result.success) {
+      notify(result.error)
+      return false
+    }
+    const completed = normalizeAudit(result.data, assets)
     recordDataActivity({
       actor: currentUser,
       module: "Stock Opname",
@@ -1260,12 +1464,17 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       recordId: audit.id,
       recordLabel: audit.name,
       changes: {
-        status: { before: audit.status, after: "Completed" },
-        inventoryAdjusted: { before: "0", after: String(adjustments.size) },
+        status: { before: audit.status, after: completed.status },
       },
     })
+    commitAudits((list) =>
+      list.map((entry) => (entry.id === auditId ? completed : entry)),
+    )
+    const assetsRefreshed = await refreshAssets()
     notify(
-      `Stock opname completed · ${adjustments.size} confirmed assets applied to inventory`,
+      assetsRefreshed
+        ? "Stock opname completed and inventory refreshed"
+        : "Stock opname completed. Inventory refresh failed; refresh it before relying on local values.",
     )
     return true
   }
@@ -2034,7 +2243,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     notify("Master data saved")
     return true
   }
-  const saveBusinessUnit = (nameValue: string, id?: string) => {
+  const saveBusinessUnit = async (nameValue: string, id?: string) => {
     const name = nameValue.trim()
     if (!name) {
       notify("Business Unit name is required")
@@ -2043,6 +2252,10 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     const existing = id
       ? master.businessUnits.find((unit) => unit.id === id)
       : undefined
+    if (id && !existing) {
+      notify("Business Unit not found. Refresh master data and try again.")
+      return false
+    }
     if (
       existing
         ? !canManageExisting(currentUser)
@@ -2061,14 +2274,43 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       notify("Business Unit name already exists")
       return false
     }
-    const unitId =
-      existing?.id ?? generateMasterId(master.businessUnits, "businessUnits")
-    const nextUnit: MasterItem = {
-      id: unitId,
-      name,
-      code: generateBusinessUnitCode(name),
+    const numericId = existing ? Number(existing.id) : undefined
+    if (
+      existing &&
+      (!Number.isSafeInteger(numericId) || (numericId ?? 0) <= 0)
+    ) {
+      notify("Business Unit ID must be a positive integer")
+      return false
     }
-    if (!existing) reserveMasterId(unitId)
+    const result = existing
+      ? await businessUnitsApi.update(numericId!, {
+          busUnitCode: name,
+          busUnitPrefix: generateBusinessUnitCode(name),
+          isActive: existing.active ?? true,
+        })
+      : await businessUnitsApi.create({
+          busUnitCode: name,
+          busUnitPrefix: generateBusinessUnitCode(name),
+          isActive: true,
+        })
+    if (!result.success) {
+      notify(result.error)
+      return false
+    }
+    if (
+      !Number.isSafeInteger(result.data.busUnitId) ||
+      result.data.busUnitId <= 0 ||
+      !result.data.busUnitCode?.trim()
+    ) {
+      notify("The API returned an invalid Business Unit")
+      return false
+    }
+    const nextUnit = toBusinessUnitItem(result.data)
+    const unitId = nextUnit.id
+    if (existing && existing.id !== unitId) {
+      notify("The API returned a different Business Unit ID")
+      return false
+    }
     setMaster((value) => ({
       ...value,
       businessUnits: existing
@@ -2077,6 +2319,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
           )
         : [nextUnit, ...value.businessUnits],
     }))
+    invalidateMasterDataCache()
     if (existing && existing.name !== name) {
       setAssets((value) =>
         value.map((asset) =>
@@ -2123,7 +2366,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     notify(existing ? "Business Unit saved" : "Business Unit created")
     return true
   }
-  const saveLocation = (
+  const saveLocation = async (
     nameValue: string,
     businessUnitId: string,
     id?: string,
@@ -2139,6 +2382,10 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     const existing = id
       ? master.locations.find((location) => location.id === id)
       : undefined
+    if (id && !existing) {
+      notify("Location not found. Refresh master data and try again.")
+      return false
+    }
     if (
       existing
         ? !canManageExisting(currentUser)
@@ -2162,18 +2409,49 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       notify("This Location name already exists in the selected Business Unit")
       return false
     }
-    const locationId =
-      existing?.id ?? generateMasterId(master.locations, "locations")
-    const nextLocation: MasterItem = {
-      ...existing,
-      id: locationId,
-      name,
-      code: existing?.code ?? "",
-      location_id: locationId,
-      location_name: name,
-      businessUnitId,
+    const numericBusinessUnitId = Number(businessUnitId)
+    const numericLocationId = existing ? Number(existing.id) : undefined
+    if (
+      !Number.isSafeInteger(numericBusinessUnitId) ||
+      numericBusinessUnitId <= 0 ||
+      (existing &&
+        (!Number.isSafeInteger(numericLocationId) ||
+          (numericLocationId ?? 0) <= 0))
+    ) {
+      notify("Business Unit and Location IDs must be positive integers")
+      return false
     }
-    if (!existing) reserveMasterId(locationId)
+    const result = existing
+      ? await locationsApi.update(numericLocationId!, {
+          busUnitId: numericBusinessUnitId,
+          locationName: name,
+        })
+      : await locationsApi.create({
+          busUnitId: numericBusinessUnitId,
+          locationName: name,
+        })
+    if (!result.success) {
+      notify(result.error)
+      return false
+    }
+    if (
+      !Number.isSafeInteger(result.data.locationId) ||
+      result.data.locationId <= 0 ||
+      result.data.busUnitId !== numericBusinessUnitId ||
+      !result.data.locationName?.trim()
+    ) {
+      notify("The API returned an invalid Location")
+      return false
+    }
+    const nextLocation = {
+      ...existing,
+      ...toLocationItem(result.data),
+    }
+    const locationId = nextLocation.id
+    if (existing && existing.id !== locationId) {
+      notify("The API returned a different Location ID")
+      return false
+    }
     setMaster((value) => ({
       ...value,
       locations: existing
@@ -2182,6 +2460,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
           )
         : [...value.locations, nextLocation],
     }))
+    invalidateMasterDataCache()
     if (existing && existing.name !== name) {
       setAssets((value) =>
         value.map((asset) =>
@@ -2230,7 +2509,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     notify(existing ? "Location saved" : "Location created")
     return true
   }
-  const deleteBusinessUnit = (id: string) => {
+  const deleteBusinessUnit = async (id: string) => {
     if (!canDelete(currentUser)) {
       notify("Hanya Admin yang dapat melakukan penghapusan data.")
       return false
@@ -2262,12 +2541,17 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       )
       return false
     }
+    const result = await businessUnitsApi.destroy(id)
+    if (!result.success) {
+      notify(result.error)
+      return false
+    }
     reserveDeletedBusinessUnit(id)
-    reserveMasterId(id)
     setMaster((value) => ({
       ...value,
       businessUnits: value.businessUnits.filter((item) => item.id !== id),
     }))
+    invalidateMasterDataCache()
     recordDataActivity({
       actor: currentUser,
       module: "Business Unit",
@@ -2278,7 +2562,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     notify("Business Unit deleted")
     return true
   }
-  const deleteLocation = (id: string) => {
+  const deleteLocation = async (id: string) => {
     if (!canDelete(currentUser)) {
       notify("Hanya Admin yang dapat melakukan penghapusan data.")
       return false
@@ -2312,12 +2596,17 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       )
       return false
     }
+    const result = await locationsApi.destroy(id)
+    if (!result.success) {
+      notify(result.error)
+      return false
+    }
     reserveDeletedLocation(id)
-    reserveMasterId(id)
     setMaster((value) => ({
       ...value,
       locations: value.locations.filter((item) => item.id !== id),
     }))
+    invalidateMasterDataCache()
     recordDataActivity({
       actor: currentUser,
       module: "Location",
@@ -2464,29 +2753,13 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     notify("Master record deleted")
     return true
   }
-  const importAssets = (items: Asset[]) => {
-    if (!canCreateInModule(currentUser, "asset-inventory")) {
-      notify("You do not have permission to import assets")
-      return
-    }
-    setAssets((value) => [
-      ...items.map((asset) => normalizeAssetClassification(asset, master)),
-      ...value,
-    ])
-    recordDataActivity({
-      actor: currentUser,
-      module: "Asset Inventory",
-      action: "Create",
-      recordId: `IMPORT-${Date.now()}`,
-      recordLabel: `${items.length} imported assets`,
-    })
-    notify(`${items.length} assets imported`)
-  }
   const value = useMemo(
     () => ({
       assets,
       transactions,
       audits,
+      auditDataStatus,
+      auditDataError,
       master,
       businessUnit,
       theme,
@@ -2498,6 +2771,10 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       masterDataRefreshing,
       refreshMasterData,
       refreshAssets,
+      refreshAudits,
+      loadAuditDetails,
+      uploadAuditEvidence,
+      removeAuditEvidence,
       loadTransactionDetails,
       saveAsset,
       saveTransaction,
@@ -2513,7 +2790,6 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       setSidebarCollapsed,
       setSelectedAsset,
       notify,
-      importAssets,
       saveMaster,
       deleteMaster,
       saveBusinessUnit,
@@ -2526,6 +2802,8 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       transactions,
       currentUser,
       audits,
+      auditDataStatus,
+      auditDataError,
       master,
       businessUnit,
       theme,
@@ -2537,6 +2815,10 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       masterDataRefreshing,
       refreshMasterData,
       refreshAssets,
+      refreshAudits,
+      loadAuditDetails,
+      uploadAuditEvidence,
+      removeAuditEvidence,
       saveBusinessUnit,
       saveLocation,
       deleteBusinessUnit,

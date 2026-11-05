@@ -1,9 +1,56 @@
 import type { MasterItem } from "@/data/demoData"
 import type { MasterDataSnapshot } from "@/services/api/masterDataCache"
+import type {
+  BusinessUnitDto,
+  AssetStatusDto,
+  ConditionDto,
+  LocationDto,
+} from "@/services/api/masterData.api"
 import { generateAssetId } from "@/utils/masterData"
 
 const relationId = (id: number | null | undefined) =>
   id == null ? "" : String(id)
+
+export function toBusinessUnitItem(unit: BusinessUnitDto): MasterItem {
+  return {
+    id: String(unit.busUnitId),
+    name: unit.busUnitCode ?? "",
+    code: unit.busUnitPrefix ?? "",
+    active: unit.isActive,
+  }
+}
+
+export function toLocationItem(location: LocationDto): MasterItem {
+  const id = String(location.locationId)
+  const name = location.locationName ?? ""
+  return {
+    id,
+    name,
+    code: "",
+    location_id: id,
+    location_name: name,
+    businessUnitId: String(location.busUnitId),
+  }
+}
+
+export function toConditionItem(condition: ConditionDto): MasterItem {
+  return {
+    id: String(condition.conditionId),
+    name: condition.conditionName ?? "",
+    code: condition.conditionCode ?? "",
+    active: condition.isActive,
+  }
+}
+
+export function toAssetStatusItem(status: AssetStatusDto): MasterItem {
+  return {
+    id: String(status.statusId),
+    name: status.statusName ?? "",
+    code: status.statusCode ?? "",
+    active: status.isActive,
+  }
+}
+
 const businessId = (
   value: string | null,
   prefix: string,
@@ -135,5 +182,20 @@ export function toMasterItems(data: MasterDataSnapshot) {
     }
   })
 
-  return { categories, groups, types, brands, models }
+  const businessUnits = data.businessUnits.map(toBusinessUnitItem)
+  const locations = data.locations.map(toLocationItem)
+  const conditions = data.conditions.map(toConditionItem)
+  const assetStatuses = data.assetStatuses.map(toAssetStatusItem)
+
+  return {
+    categories,
+    groups,
+    types,
+    brands,
+    models,
+    businessUnits,
+    locations,
+    conditions,
+    assetStatuses,
+  }
 }

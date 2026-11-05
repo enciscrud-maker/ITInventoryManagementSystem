@@ -52,14 +52,15 @@ export function normalizeAudit(audit: Audit, assets: Asset[]): Audit {
     items: audit.items.map((item) => {
       const asset = byId.get(item.assetId)
       const legacy = item.evidence as unknown
-      // Legacy evidence was a temporary blob: URL, which does not survive a reload.
       const evidence = Array.isArray(legacy)
         ? legacy.filter(
-            (v): v is string => typeof v === "string" && v.startsWith("data:"),
+            (v): v is string => typeof v === "string" && v.length > 0,
           )
         : typeof legacy === "string" && legacy.startsWith("data:")
           ? [legacy]
-          : []
+          : typeof legacy === "string" && legacy.length > 0
+            ? [legacy]
+            : []
       const next: AuditItem = {
         ...item,
         systemQty: item.systemQty ?? asset?.quantity ?? 0,

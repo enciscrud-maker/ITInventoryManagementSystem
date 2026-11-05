@@ -16,8 +16,22 @@ const masterDataResources = new Set([
   "api/asset-types",
   "api/asset-models",
   "api/asset-groups",
+  "api/business-units",
+  "api/locations",
+  "api/asset-conditions",
+  "api/asset-statuses",
 ])
 const assetsReadResource = "api/assets"
+const assetIdPath = /^api\/assets\/[1-9]\d*$/
+const assetActionPath =
+  /^api\/assets\/(?:bulk-business-unit|import|export|import-template)$/
+const stockAuditDetailPath = /^api\/stock-audits\/[1-9]\d*$/
+const stockAuditItemsPath = /^api\/stock-audits\/[1-9]\d*\/items$/
+const stockAuditEvidenceUploadPath =
+  /^api\/stock-audits\/[1-9]\d*\/items\/[1-9]\d*\/evidence$/
+const stockAuditEvidenceDownloadPath =
+  /^api\/stock-audits\/[1-9]\d*\/items\/[1-9]\d*\/evidence\/[1-9]\d*$/
+const stockAuditCompletePath = /^api\/stock-audits\/[1-9]\d*\/complete$/
 const goodsEndpoint =
   /^api\/goods-(?:in|out)(?:\/([1-9]\d*)(?:\/(status|attachments))?)?$/
 
@@ -58,6 +72,37 @@ async function proxyAuthRequest(
   const resource = path.length >= 2 ? path.slice(0, 2).join("/") : ""
   const isMasterDataEndpoint = masterDataResources.has(resource)
   const isAssetsReadEndpoint = endpoint === assetsReadResource
+  const isAssetDetailEndpoint = assetIdPath.test(endpoint)
+  const isAssetActionEndpoint = assetActionPath.test(endpoint)
+  const isAssetsEndpoint =
+    isAssetsReadEndpoint || isAssetDetailEndpoint || isAssetActionEndpoint
+  const isStockAuditsEndpoint =
+    endpoint === "api/stock-audits" ||
+    stockAuditDetailPath.test(endpoint) ||
+    stockAuditItemsPath.test(endpoint) ||
+    stockAuditEvidenceUploadPath.test(endpoint) ||
+    stockAuditEvidenceDownloadPath.test(endpoint) ||
+    stockAuditCompletePath.test(endpoint)
+  const allowedStockAuditMethod =
+    (endpoint === "api/stock-audits" &&
+      ["GET", "POST"].includes(request.method)) ||
+    (stockAuditDetailPath.test(endpoint) &&
+      ["GET", "PUT"].includes(request.method)) ||
+    (stockAuditItemsPath.test(endpoint) && request.method === "PUT") ||
+    (stockAuditEvidenceUploadPath.test(endpoint) &&
+      request.method === "POST") ||
+    (stockAuditEvidenceDownloadPath.test(endpoint) &&
+      ["GET", "DELETE"].includes(request.method)) ||
+    (stockAuditCompletePath.test(endpoint) && request.method === "POST")
+  const allowedAssetsMethod =
+    (isAssetsReadEndpoint && ["GET", "POST"].includes(request.method)) ||
+    (isAssetDetailEndpoint && ["GET", "PUT"].includes(request.method)) ||
+    (endpoint === "api/assets/bulk-business-unit" &&
+      request.method === "POST") ||
+    (endpoint === "api/assets/import" && request.method === "POST") ||
+    ((endpoint === "api/assets/export" ||
+      endpoint === "api/assets/import-template") &&
+      request.method === "GET")
   const goodsMatch = endpoint.match(goodsEndpoint)
   const isGoodsEndpoint = goodsMatch !== null
   const isGoodsListEndpoint = isGoodsEndpoint && path.length === 2
@@ -83,7 +128,8 @@ async function proxyAuthRequest(
   if (
     !isAuthEndpoint &&
     !isMasterDataEndpoint &&
-    !isAssetsReadEndpoint &&
+    !isAssetsEndpoint &&
+    !isStockAuditsEndpoint &&
     !isGoodsEndpoint
   ) {
     return NextResponse.json({ error: "Not found." }, { status: 404 })
@@ -91,7 +137,8 @@ async function proxyAuthRequest(
   if (
     (isAuthEndpoint && request.method !== expectedMethod) ||
     (isMasterDataEndpoint && !allowedMasterDataMethod) ||
-    (isAssetsReadEndpoint && request.method !== "GET") ||
+    (isAssetsEndpoint && !allowedAssetsMethod) ||
+    (isStockAuditsEndpoint && !allowedStockAuditMethod) ||
     (isGoodsEndpoint && !allowedGoodsMethod)
   ) {
     return NextResponse.json({ error: "Method not allowed." }, { status: 405 })
@@ -123,7 +170,8 @@ async function proxyAuthRequest(
   if (
     (endpoint === "api/auth/me" ||
       isMasterDataEndpoint ||
-      isAssetsReadEndpoint ||
+      isAssetsEndpoint ||
+      isStockAuditsEndpoint ||
       isGoodsEndpoint) &&
     !accessToken
   ) {
@@ -149,7 +197,8 @@ async function proxyAuthRequest(
     if (
       (endpoint === "api/auth/me" ||
         isMasterDataEndpoint ||
-        isAssetsReadEndpoint ||
+        isAssetsEndpoint ||
+        isStockAuditsEndpoint ||
         isGoodsEndpoint) &&
       accessToken
     ) {
@@ -166,6 +215,15 @@ async function proxyAuthRequest(
       if (accessToken) headers.set("authorization", `Bearer ${accessToken}`)
     } else if (isMasterDataEndpoint && request.method !== "GET") {
       requestBody = await request.text()
+    } else if (isStockAuditsEndpoint && request.method !== "GET") {
+      requestBody = stockAuditEvidenceUploadPath.test(endpoint)
+        ? await request.arrayBuffer()
+        : await request.text()
+    } else if (isAssetsEndpoint && request.method !== "GET") {
+      requestBody =
+        endpoint === "api/assets/import"
+          ? await request.arrayBuffer()
+          : await request.text()
     } else if (isGoodsEndpoint && request.method !== "GET") {
       requestBody = await request.arrayBuffer()
     }
@@ -173,6 +231,8 @@ async function proxyAuthRequest(
     const requestUrl = new URL(`/${endpoint}`, `${apiBaseUrl}/`)
     if (
       isMasterDataEndpoint ||
+      isAssetsEndpoint ||
+      isStockAuditsEndpoint ||
       isAssetsReadEndpoint ||
       (isGoodsListEndpoint && request.method === "GET")
     ) {
@@ -270,6 +330,13 @@ async function proxyAuthRequest(
       headers: {
         "content-type":
           upstream.headers.get("content-type") ?? "application/json",
+        ...(upstream.headers.get("content-disposition")
+          ? {
+              "content-disposition": upstream.headers.get(
+                "content-disposition",
+              )!,
+            }
+          : {}),
         "cache-control": "no-store",
       },
     })

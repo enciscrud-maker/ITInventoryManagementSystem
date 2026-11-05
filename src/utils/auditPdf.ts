@@ -1,13 +1,38 @@
 import type { Asset, Audit } from "../data/demoData"
 
-const loadImage = (src: string) =>
-  new Promise<HTMLImageElement>((resolve, reject) => {
-    const image = new Image()
-    image.onload = () => resolve(image)
-    image.onerror = () =>
-      reject(new Error("Evidence image could not be loaded"))
-    image.src = src
-  })
+const loadImage = async (src: string) => {
+  let objectUrl: string | undefined
+  const imageSrc = src.startsWith("data:")
+    ? src
+    : await fetch(src, { credentials: "include" }).then(async (response) => {
+        if (!response.ok)
+          throw new Error("Evidence image could not be downloaded")
+        objectUrl = URL.createObjectURL(await response.blob())
+        return objectUrl
+      })
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const image = new Image()
+      image.onload = () => resolve(image)
+      image.onerror = () =>
+        reject(new Error("Evidence image could not be loaded"))
+      image.src = imageSrc
+    })
+    const canvas = document.createElement("canvas")
+    canvas.width = image.naturalWidth
+    canvas.height = image.naturalHeight
+    const context = canvas.getContext("2d")
+    if (!context) throw new Error("Evidence image could not be processed")
+    context.drawImage(image, 0, 0)
+    return {
+      data: canvas.toDataURL("image/jpeg", 0.9),
+      width: image.naturalWidth,
+      height: image.naturalHeight,
+    }
+  } finally {
+    if (objectUrl) URL.revokeObjectURL(objectUrl)
+  }
+}
 
 /**
  * Builds a PDF of all evidence images in a session and downloads it.
@@ -94,7 +119,7 @@ export async function exportEvidencePdf(
       sized.forEach((size, index) => {
         if (!size) return
         doc.addImage(
-          pair[index],
+          loaded[index]!.data,
           "JPEG",
           margin + index * (cellW + gap),
           y,

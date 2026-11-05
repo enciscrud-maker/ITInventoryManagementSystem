@@ -11,11 +11,16 @@ export const apiRoutes = {
     types: "/app-api/backend/api/asset-types",
     models: "/app-api/backend/api/asset-models",
     groups: "/app-api/backend/api/asset-groups",
+    businessUnits: "/app-api/backend/api/business-units",
+    locations: "/app-api/backend/api/locations",
+    conditions: "/app-api/backend/api/asset-conditions",
+    assetStatuses: "/app-api/backend/api/asset-statuses",
   },
   inventory: {
     assets: "/app-api/backend/api/assets",
     goodsIn: "/app-api/backend/api/goods-in",
     goodsOut: "/app-api/backend/api/goods-out",
+    stockAudits: "/app-api/backend/api/stock-audits",
   },
   app: {
     accounts: "/app-api/accounts",
