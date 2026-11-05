@@ -32,12 +32,9 @@ import {
   canManageExisting,
 } from "@/services/authorizationService"
 
-import {
-  defaultConditionTagColor,
-  generateMasterId,
-  generateStatusCode,
-  isValidTagColor,
-} from "@/utils/masterData"
+import { assetStatusesApi, conditionsApi } from "@/services/api/masterData.api"
+import { invalidateMasterDataCache } from "@/services/api/masterDataCache"
+import { generateStatusCode } from "@/utils/masterData"
 
 type DataType = "" | "condition" | "status"
 
@@ -59,7 +56,7 @@ export default function ConditionStatusManagement({
 
   onTabChange: (tab: string) => void
 }) {
-  const { master, saveMaster, deleteMaster, notify } = useInventory()
+  const { master, notify, refreshMasterData } = useInventory()
 
   const { currentUser } = useAuth()
 
@@ -76,13 +73,19 @@ export default function ConditionStatusManagement({
 
   const [editingId, setEditingId] = useState<string | null>(null)
 
-  const [conditionName, setConditionName] = useState("")
+  const [conditionCode, setConditionCode] = useState("")
 
-  const [tagColor, setTagColor] = useState("#64748b")
+  const [conditionName, setConditionName] = useState("")
 
   const [statusName, setStatusName] = useState("")
 
   const [statusUsage, setStatusUsage] = useState<"In" | "Out">("In")
+
+  const [isActive, setIsActive] = useState(true)
+
+  const [saving, setSaving] = useState(false)
+
+  const [deletingRecord, setDeletingRecord] = useState(false)
 
   const [deleting, setDeleting] = useState<RecordRef | null>(null)
 
@@ -122,18 +125,28 @@ export default function ConditionStatusManagement({
 
     if (dataType === "condition") {
       const name = conditionName.trim()
+      const code = conditionCode.trim()
 
       if (!name) list.push("Condition is required.")
+      if (!code) list.push("Condition code is required.")
 
       if (
-        !isEditing &&
         master.conditions.some(
-          (item) => item.name.toLocaleLowerCase() === name.toLocaleLowerCase(),
+          (item) =>
+            item.id !== editingId &&
+            item.name.toLocaleLowerCase() === name.toLocaleLowerCase(),
         )
       )
         list.push("Condition name already exists.")
 
-      if (!isValidTagColor(tagColor)) list.push("Choose a valid tag color.")
+      if (
+        master.conditions.some(
+          (item) =>
+            item.id !== editingId &&
+            item.code.toLocaleLowerCase() === code.toLocaleLowerCase(),
+        )
+      )
+        list.push("Condition code already exists.")
     } else {
       const name = statusName.trim()
 
@@ -154,6 +167,7 @@ export default function ConditionStatusManagement({
     return list
   }, [
     conditionName,
+    conditionCode,
 
     dataType,
 
@@ -170,8 +184,6 @@ export default function ConditionStatusManagement({
     statusCode,
 
     statusName,
-
-    tagColor,
   ])
 
   const resetForm = () => {
@@ -181,13 +193,15 @@ export default function ConditionStatusManagement({
 
     setEditingId(null)
 
-    setConditionName("")
+    setConditionCode("")
 
-    setTagColor(defaultConditionTagColor("Condition"))
+    setConditionName("")
 
     setStatusName("")
 
     setStatusUsage("In")
+
+    setIsActive(true)
   }
 
   const openAdd = () => {
@@ -202,63 +216,86 @@ export default function ConditionStatusManagement({
     setEditingId(item.id)
 
     if (type === "condition") {
-      setConditionName(item.name)
+      setConditionCode(item.code)
 
-      setTagColor(item.tagColor ?? defaultConditionTagColor(item.name))
+      setConditionName(item.name)
     } else {
       setStatusName(item.name)
 
       setStatusUsage(item.usage ?? "In")
     }
 
+    setIsActive(item.active ?? true)
+
     setFormOpen(true)
   }
 
-  const save = () => {
-    if (!dataType || errors.length) return
+  const save = async () => {
+    if (!dataType || errors.length || saving) return
 
-    const id =
-      editingId ??
-      generateMasterId(
-        dataType === "condition" ? master.conditions : master.statuses,
+    setSaving(true)
+    try {
+      const result =
+        dataType === "condition"
+          ? editingId
+            ? await conditionsApi.update(editingId, {
+                conditionCode: conditionCode.trim(),
+                conditionName: conditionName.trim(),
+                isActive,
+              })
+            : await conditionsApi.create({
+                conditionCode: conditionCode.trim(),
+                conditionName: conditionName.trim(),
+                isActive,
+              })
+          : editingId
+            ? await assetStatusesApi.update(editingId, {
+                statusCode,
+                statusName: statusName.trim(),
+                isActive,
+              })
+            : await assetStatusesApi.create({
+                statusCode,
+                statusName: statusName.trim(),
+                isActive,
+              })
 
-        dataType === "condition" ? "conditions" : "statuses",
-      )
+      if (!result.success) {
+        notify(result.error)
+        return
+      }
 
-    const item: MasterItem =
-      dataType === "condition"
-        ? {
-            id,
-
-            name: isEditing
-              ? (master.conditions.find((record) => record.id === id)?.name ??
-                conditionName.trim())
-              : conditionName.trim(),
-
-            code: "",
-
-            tagColor,
-          }
-        : {
-            id,
-
-            name: statusName.trim(),
-
-            code: statusCode,
-
-            usage: statusUsage,
-          }
-
-    if (saveMaster(dataType === "condition" ? "conditions" : "statuses", item))
       resetForm()
+      invalidateMasterDataCache()
+      if (!(await refreshMasterData())) {
+        notify("Record saved, but master data could not be refreshed.")
+      }
+    } finally {
+      setSaving(false)
+    }
   }
 
-  const confirmDelete = () => {
-    if (!deleting) return
+  const confirmDelete = async () => {
+    if (!deleting || deletingRecord) return
 
-    const key = deleting.type === "condition" ? "conditions" : "statuses"
+    setDeletingRecord(true)
+    try {
+      const api =
+        deleting.type === "condition" ? conditionsApi : assetStatusesApi
+      const result = await api.destroy(deleting.item.id)
+      if (!result.success) {
+        notify(result.error)
+        return
+      }
 
-    if (deleteMaster(key, deleting.item.id)) setDeleting(null)
+      setDeleting(null)
+      invalidateMasterDataCache()
+      if (!(await refreshMasterData())) {
+        notify("Record deleted, but master data could not be refreshed.")
+      }
+    } finally {
+      setDeletingRecord(false)
+    }
   }
 
   return (
@@ -295,7 +332,7 @@ export default function ConditionStatusManagement({
                 <tr>
                   <th>No</th>
                   <th>Condition</th>
-                  <th>Tag</th>
+                  <th>Code</th>
                   <th>Action</th>
                 </tr>
               </thead>
@@ -303,12 +340,11 @@ export default function ConditionStatusManagement({
                 {conditions.map((item, index) => (
                   <tr key={item.id}>
                     <td className="numeric">{index + 1}</td>
-                    <td>{item.name}</td>
                     <td>
-                      <ConditionBadge
-                        condition={item.name}
-                        color={item.tagColor}
-                      />
+                      <ConditionBadge condition={item.name} />
+                    </td>
+                    <td>
+                      <code>{item.code}</code>
                     </td>
                     <td>
                       <div className="row-actions">
@@ -419,9 +455,9 @@ export default function ConditionStatusManagement({
 
               setDataType(nextType)
 
-              setConditionName("")
+              setConditionCode("")
 
-              setTagColor(defaultConditionTagColor("Condition"))
+              setConditionName("")
 
               setStatusName("")
 
@@ -439,24 +475,15 @@ export default function ConditionStatusManagement({
             <>
               <Input
                 autoFocus={!isEditing}
-                label="Condition *"
-                value={conditionName}
-                readOnly={isEditing}
-                onChange={(event) => setConditionName(event.target.value)}
+                label="Condition Code *"
+                value={conditionCode}
+                onChange={(event) => setConditionCode(event.target.value)}
               />
               <Input
-                label="Tag Color *"
-                type="color"
-                value={tagColor}
-                onChange={(event) => setTagColor(event.target.value)}
+                label="Condition *"
+                value={conditionName}
+                onChange={(event) => setConditionName(event.target.value)}
               />
-              <div className="condition-preview">
-                <span>Preview</span>
-                <ConditionBadge
-                  condition={conditionName.trim() || "Condition"}
-                  color={tagColor}
-                />
-              </div>
             </>
           )}
           {dataType === "status" && (
@@ -503,8 +530,8 @@ export default function ConditionStatusManagement({
             <Button variant="secondary" onClick={resetForm}>
               Cancel
             </Button>
-            <Button disabled={errors.length > 0} onClick={save}>
-              Save Record
+            <Button disabled={errors.length > 0 || saving} onClick={save}>
+              {saving ? "Saving..." : "Save Record"}
             </Button>
           </div>
         )}
