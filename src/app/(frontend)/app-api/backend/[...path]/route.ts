@@ -243,13 +243,13 @@ async function proxyAuthRequest(
     }
 
     let requestBody: BodyInit | undefined
-    if (isAuthEndpoint && request.method !== "GET") {
-      requestBody = await request.text()
-    } else if (endpoint === "api/auth/refresh") {
+    if (endpoint === "api/auth/refresh") {
       requestBody = JSON.stringify({ refreshToken })
     } else if (endpoint === "api/auth/logout") {
       requestBody = JSON.stringify({ refreshToken: refreshToken ?? null })
       if (accessToken) headers.set("authorization", `Bearer ${accessToken}`)
+    } else if (isAuthEndpoint && request.method !== "GET") {
+      requestBody = await request.text()
     } else if (isMasterDataEndpoint && request.method !== "GET") {
       requestBody = await request.text()
     } else if (isUserManagementEndpoint && request.method !== "GET") {
