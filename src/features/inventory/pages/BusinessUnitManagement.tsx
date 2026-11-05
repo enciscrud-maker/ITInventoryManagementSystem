@@ -42,8 +42,8 @@ export default function BusinessUnitManagement({
   } = useInventory()
   const { currentUser } = useAuth()
   const createAllowed = canCreateInModule(currentUser, "master-data")
-  const editAllowed = canManageExisting(currentUser)
-  const deleteAllowed = canDelete(currentUser)
+  const editAllowed = canManageExisting(currentUser, "master-data")
+  const deleteAllowed = canDelete(currentUser, "master-data")
   const [query, setQuery] = useState("")
   const [unitEditor, setUnitEditor] = useState<{
     id?: string

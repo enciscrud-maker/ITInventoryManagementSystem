@@ -47,9 +47,9 @@ code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 1
 .app-main { min-width: 0; }
 .topbar { height: 65px; padding: 0 20px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 20; }
 .topbar-title { min-width: 128px; display: flex; flex-direction: column; } .topbar-title small { color: var(--muted); font-size: 10px; } .topbar-title strong { font-size: 13px; }
-.global-search { height: 36px; max-width: 430px; flex: 1; position: relative; display: flex; align-items: center; gap: 8px; background: var(--surface-2); border: 1px solid transparent; border-radius: 7px; padding: 0 11px; color: var(--muted); }
+.global-search { height: 36px; max-width: 430px; min-width: 0; flex: 1; position: relative; display: flex; align-items: center; gap: 8px; background: var(--surface-2); border: 1px solid transparent; border-radius: 7px; padding: 0 11px; color: var(--muted); }
 .global-search:focus-within { border-color: var(--primary); background: var(--surface); }
-.global-search input { width: 100%; border: 0; outline: 0; background: transparent; color: var(--text); }
+.global-search input { width: 100%; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--text); }
 .search-results { position: absolute; top: 42px; left: 0; right: 0; background: var(--elevated); border: 1px solid var(--border); box-shadow: var(--shadow); border-radius: 9px; padding: 6px; z-index: 50; }
 .search-results button { width: 100%; border: 0; background: transparent; text-align: left; padding: 9px; border-radius: 6px; display: flex; flex-direction: column; cursor: pointer; }
 .search-results button:hover { background: var(--surface-2); } .search-results span, .search-results p { color: var(--muted); font-size: 11px; }
@@ -128,6 +128,78 @@ td small { display: block; color: var(--muted); font-size: 9px; margin-top: 2px;
   .permission-grid { grid-template-columns: 1fr; }
   .low-stock-actions { align-items: flex-end; flex-direction: column; }
 }
+@media (max-width: 780px) {
+  .user-menu {
+    display: inline-flex;
+    width: 34px;
+    min-width: 34px;
+    height: 34px;
+    padding: 0 3px;
+    justify-content: center;
+  }
+  .user-menu > span:not(.avatar),
+  .user-menu > svg {
+    display: none;
+  }
+  .notification-popover {
+    position: fixed;
+    top: 58px;
+    right: 10px;
+    width: min(280px, calc(100vw - 20px));
+  }
+  .toolbar {
+    flex-wrap: wrap;
+    overflow: visible;
+  }
+  .toolbar .search-input {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    flex: 1 1 100%;
+  }
+  .toolbar .search-input input {
+    min-width: 0;
+  }
+  .toolbar .field {
+    min-width: min(160px, 100%);
+    flex: 1 1 140px;
+  }
+  .stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .stat-card {
+    min-width: 0;
+    gap: 8px;
+    padding: 12px;
+  }
+  .stat-card > div {
+    min-width: 0;
+  }
+  .stat-card strong {
+    overflow-wrap: anywhere;
+  }
+  .card-header,
+  .form-actions,
+  .import-actions,
+  .import-summary,
+  .bulk-bar,
+  .table-footer,
+  .drawer-actions {
+    flex-wrap: wrap;
+  }
+  .table-footer {
+    align-items: flex-start;
+  }
+  .pagination {
+    min-width: 0;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .pagination > span {
+    flex: 1 1 120px;
+  }
+}
+
 @media print {
   .sidebar, .topbar, .page-header .page-actions, .report-builder, .toast { display: none !important; }.app-shell { display: block; }.content { padding: 0; }.report-result { border: 0; }.dark { --bg: white; --surface: white; --text: black; --muted: #555; --border: #ddd; }
 }
@@ -372,6 +444,7 @@ td small { display: block; color: var(--muted); font-size: 9px; margin-top: 2px;
     position: fixed;
     top: 58px;
     right: 10px;
+    width: min(290px, calc(100vw - 20px));
   }
 }
 

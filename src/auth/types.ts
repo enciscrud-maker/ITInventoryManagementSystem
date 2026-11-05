@@ -1,7 +1,8 @@
 import type { ApiResult } from "@/lib/api/types"
+import type { PagePermission } from "@/config/pageRegistry"
 
 export type AccountRole = "Admin" | "Member"
-export type PagePermission = "asset-inventory" | "goods-in" | "goods-out" | "stock-opname" | "master-data" | "reports"
+export type { PagePermission } from "@/config/pageRegistry"
 
 export type PublicAccount = {
   id: string
@@ -13,6 +14,7 @@ export type PublicAccount = {
   profile_photo: string
   role: AccountRole
   page_permissions: PagePermission[]
+  is_main_admin: boolean
   position: string
   department: string
   business_unit: string

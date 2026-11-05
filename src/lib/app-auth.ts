@@ -18,6 +18,7 @@ export function sanitizeAccount(account: Account): PublicAccount {
     profile_photo: typeof photo === "object" && photo?.url ? photo.url : "",
     role: account.role,
     page_permissions: (account.page_permissions ?? []) as PagePermission[],
+    is_main_admin: false,
     position: account.position,
     department: account.department,
     business_unit: account.business_unit,

@@ -316,7 +316,7 @@ export default function AssetInventory() {
   } = useInventory()
   const { currentUser } = useAuth()
   const createAllowed = canCreateInModule(currentUser, "asset-inventory")
-  const manageAllowed = canManageExisting(currentUser)
+  const manageAllowed = canManageExisting(currentUser, "asset-inventory")
   const [search, setSearch] = useState("")
   const [filtersOpen, setFiltersOpen] = useState(true)
   const [filters, setFilters] = useState<Record<string, string>>({})

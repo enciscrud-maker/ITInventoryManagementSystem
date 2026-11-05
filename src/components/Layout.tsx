@@ -25,6 +25,7 @@ import {
   Sun,
   UserRound,
   X,
+  type LucideIcon,
 } from "lucide-react"
 import { useInventory } from "../context/InventoryContext"
 import { useAuth } from "../auth/AuthContext"
@@ -32,29 +33,51 @@ import { Badge, Button, ConfirmDialog, IconButton, Select } from "./ui"
 import { cn } from "../utils/helpers"
 import { AssetDrawer } from "./assets"
 import { ProfileEditor } from "./ProfileEditor"
+import { pageRegistry, type PagePermission } from "@/config/pageRegistry"
+import { canAccessPage } from "@/services/authorizationService"
+
+const pageNavItem = (id: PagePermission, icon: LucideIcon) => {
+  const page = pageRegistry.find((item) => item.id === id)
+  if (!page) throw new Error(`Unknown navigation page: ${id}`)
+  return { id, to: page.path, label: page.label, icon }
+}
+
+type NavItem = ReturnType<typeof pageNavItem> | {
+  id: "accounts"
+  to: string
+  label: string
+  icon: LucideIcon
+}
 
 const navigation = [
   {
     group: "Overview",
-    items: [{ to: "/", label: "Dashboard", icon: LayoutDashboard }],
+    items: [pageNavItem("dashboard", LayoutDashboard)],
   },
   {
     group: "Asset Management",
     items: [
-      { to: "/assets", label: "Asset Inventory", icon: Boxes },
-      { to: "/goods-in", label: "Goods In", icon: PackagePlus },
-      { to: "/goods-out", label: "Goods Out", icon: PackageMinus },
-      { to: "/audits", label: "Stock Opname", icon: ClipboardCheck },
+      pageNavItem("asset-inventory", Boxes),
+      pageNavItem("goods-in", PackagePlus),
+      pageNavItem("goods-out", PackageMinus),
+      pageNavItem("stock-opname", ClipboardCheck),
     ],
   },
   {
     group: "Administration",
     items: [
-      { to: "/master-data", label: "Master Data", icon: Database },
-      { to: "/reports", label: "Reports & Export", icon: BarChart3 },
+      pageNavItem("master-data", Database),
+      pageNavItem("reports", BarChart3),
+      pageNavItem("settings", Settings),
+      {
+        id: "accounts",
+        to: "/accounts",
+        label: "Account Management",
+        icon: ShieldCheck,
+      },
     ],
   },
-]
+] satisfies Array<{ group: string; items: NavItem[] }>
 
 const initials = (name: string) =>
   name
@@ -96,7 +119,31 @@ export function AppLayout({ children }: { children: ReactNode }) {
       ? "Preferences"
       : pathname === "/accounts"
         ? "Account Management"
-        : "IT Inventory")
+        : "I-Track")
+  const visibleNavigation = navigation
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) =>
+        item.id === "accounts"
+          ? currentUser.is_main_admin
+          : canAccessPage(currentUser, item.id),
+      ),
+    }))
+    .filter((group) => group.items.length > 0)
+  const canSearchInventory =
+    canAccessPage(currentUser, "asset-inventory") ||
+    canAccessPage(currentUser, "dashboard")
+  const canFilterBusinessUnit = [
+    "asset-inventory",
+    "goods-in",
+    "goods-out",
+    "stock-opname",
+    "master-data",
+    "dashboard",
+  ] as const
+  const canSelectBusinessUnit = canFilterBusinessUnit.some((page) =>
+    canAccessPage(currentUser, page),
+  )
   const auditAlertCount = audits
     .flatMap((audit) => audit.items)
     .filter(
@@ -154,7 +201,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
           </span>
           {!sidebarCollapsed && (
             <div>
-              <strong>IT Inventory</strong>
+              <strong>I-Track</strong>
               <small>Asset Management</small>
             </div>
           )}
@@ -167,7 +214,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
           </IconButton>
         </div>
         <nav>
-          {navigation.map((group) => (
+          {visibleNavigation.map((group) => (
             <div className="nav-group" key={group.group}>
               {!sidebarCollapsed && <span>{group.group}</span>}
               {group.items.map((item) => (
@@ -187,7 +234,9 @@ export function AppLayout({ children }: { children: ReactNode }) {
         </nav>
         <div className="sidebar-footer">
           <Badge tone="info">Protected</Badge>
-          {!sidebarCollapsed && <small>{currentUser.role} session</small>}
+          {!sidebarCollapsed && (
+            <small>{currentUser.is_main_admin ? "Main Admin" : currentUser.role} session</small>
+          )}
         </div>
       </aside>
       <div className="app-main">
@@ -211,10 +260,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
             <Menu size={20} />
           </IconButton>
           <div className="topbar-title">
-            <small>IT Inventory</small>
+            <small>I-Track</small>
             <strong>{title}</strong>
           </div>
-          <div className="global-search">
+          {canSearchInventory && <div className="global-search">
             <Search size={16} />
             <input
               aria-label="Global search"
@@ -240,20 +289,22 @@ export function AppLayout({ children }: { children: ReactNode }) {
                 )}
               </div>
             )}
-          </div>
-          <Select
-            aria-label="Business unit"
-            className="unit-switcher"
-            value={businessUnit}
-            onChange={(event) => setBusinessUnit(event.target.value)}
-            options={[
-              { value: "All Business Units", label: "All Business Units" },
-              ...master.businessUnits.map((unit) => ({
-                value: unit.id,
-                label: unit.name,
-              })),
-            ]}
-          />
+          </div>}
+          {canSelectBusinessUnit && (
+            <Select
+              aria-label="Business unit"
+              className="unit-switcher"
+              value={businessUnit}
+              onChange={(event) => setBusinessUnit(event.target.value)}
+              options={[
+                { value: "All Business Units", label: "All Business Units" },
+                ...master.businessUnits.map((unit) => ({
+                  value: unit.id,
+                  label: unit.name,
+                })),
+              ]}
+            />
+          )}
           <div className="topbar-menu">
             <IconButton
               label="Notifications"
@@ -315,21 +366,23 @@ export function AppLayout({ children }: { children: ReactNode }) {
                     <Badge
                       tone={currentUser.role === "Admin" ? "info" : "neutral"}
                     >
-                      {currentUser.role}
+                      {currentUser.is_main_admin ? "Main Admin" : currentUser.role}
                     </Badge>
                   </span>
                 </Button>
                 <div className="profile-menu-actions">
-                  <Button
-                    variant="ghost"
-                    onClick={() => {
-                      router.push("/settings")
-                      setProfileMenu(false)
-                    }}
-                  >
-                    <Settings size={16} /> Settings
-                  </Button>
-                  {currentUser.role === "Admin" && (
+                  {canAccessPage(currentUser, "settings") && (
+                    <Button
+                      variant="ghost"
+                      onClick={() => {
+                        router.push("/settings")
+                        setProfileMenu(false)
+                      }}
+                    >
+                      <Settings size={16} /> Preferences
+                    </Button>
+                  )}
+                  {currentUser.is_main_admin && (
                     <Button
                       variant="ghost"
                       onClick={() => {

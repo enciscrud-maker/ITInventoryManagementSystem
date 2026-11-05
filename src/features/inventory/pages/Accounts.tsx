@@ -8,6 +8,7 @@ import type {
   PasswordResetRequestView,
   PublicAccount,
 } from "@/auth/types"
+import { pageRegistry } from "@/config/pageRegistry"
 import { useAuth } from "@/auth/AuthContext"
 import {
   createAccount,
@@ -61,17 +62,7 @@ const tabs = [
   "Password Reset Requests",
 ]
 
-const permissionOptions: Array<{
-  value: PagePermission
-  label: string
-}> = [
-  { value: "asset-inventory", label: "Asset Inventory" },
-  { value: "goods-in", label: "Goods In" },
-  { value: "goods-out", label: "Goods Out" },
-  { value: "stock-opname", label: "Stock Opname" },
-  { value: "master-data", label: "Master Data" },
-  { value: "reports", label: "Reports & Exports" },
-]
+const permissionOptions = pageRegistry
 
 const emptyDraft: AccountDraft = {
   name: "",
@@ -406,7 +397,7 @@ export default function AccountsPage() {
                         <Badge
                           tone={account.role === "Admin" ? "info" : "neutral"}
                         >
-                          {account.role}
+                          {account.is_main_admin ? "Main Admin" : account.role}
                         </Badge>
                       </td>
                       <td>{account.position}</td>
@@ -425,6 +416,7 @@ export default function AccountsPage() {
                         <Button
                           size="sm"
                           variant="ghost"
+                          disabled={account.is_main_admin}
                           onClick={() => edit(account)}
                         >
                           <Edit3 size={14} /> Edit
@@ -803,28 +795,28 @@ export default function AccountsPage() {
                 />
               )}
             </div>
-            {draft.role === "Member" && (
+            {!accounts.find((account) => account.id === draft.id)?.is_main_admin && (
               <fieldset className="permission-fieldset">
                 <legend>Page Permissions</legend>
                 <p>
-                  Checked permissions allow this Member to view and create in
-                  the module. Edit and delete remain Admin-only.
+                  Everyone can view all pages. Members can add only on selected
+                  pages; Admins receive full supported access on selected pages.
                 </p>
                 <div className="permission-grid">
                   {permissionOptions.map((permission) => (
-                    <label key={permission.value}>
+                    <label key={permission.id}>
                       <input
                         type="checkbox"
                         checked={draft.page_permissions.includes(
-                          permission.value,
+                          permission.id,
                         )}
                         onChange={(event) =>
                           setDraft({
                             ...draft,
                             page_permissions: event.target.checked
-                              ? [...draft.page_permissions, permission.value]
+                              ? [...draft.page_permissions, permission.id]
                               : draft.page_permissions.filter(
-                                  (value) => value !== permission.value,
+                                  (value) => value !== permission.id,
                                 ),
                           })
                         }

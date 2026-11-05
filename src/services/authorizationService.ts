@@ -1,60 +1,64 @@
-import type {
-  AccountRole,
-  PagePermission,
-  PublicAccount,
-} from "@/auth/types"
+import type { PagePermission, PublicAccount } from "@/auth/types"
 
 export type PermissionAction = "view" | "create" | "update" | "delete" | "approve"
 
-const permissions: Record<AccountRole, Record<PermissionAction, boolean>> = {
-  Admin: {
-    view: true,
-    create: true,
-    update: true,
-    delete: true,
-    approve: true,
-  },
-  Member: {
-    view: true,
-    create: false,
-    update: false,
-    delete: false,
-    approve: false,
-  },
+type AuthorizationUser = Pick<
+  PublicAccount,
+  "role" | "page_permissions" | "is_main_admin"
+>
+
+export function canAccessPage(
+  user: AuthorizationUser | null | undefined,
+  page: PagePermission,
+) {
+  if (!user) return false
+  if (user.is_main_admin || user.role === "Member") return true
+  return user.page_permissions.includes(page)
 }
 
 export function canPerformAction(
-  user: Pick<PublicAccount, "role"> | null | undefined,
+  user: AuthorizationUser | null | undefined,
   action: PermissionAction,
+  page?: PagePermission,
 ) {
-  return user ? permissions[user.role][action] : false
+  if (!user) return false
+  if (user.is_main_admin) return true
+  if (action === "view") return true
+  if (!page) return false
+  if (user.role === "Member")
+    return action === "create" && user.page_permissions.includes(page)
+  return canAccessPage(user, page)
 }
 
 export const canView = (user: Pick<PublicAccount, "role"> | null | undefined) =>
-  canPerformAction(user, "view")
+  Boolean(user)
 export const canCreate = (
-  user: Pick<PublicAccount, "role"> | null | undefined,
-) => canPerformAction(user, "create")
+  user: AuthorizationUser | null | undefined,
+  page?: PagePermission,
+) => canPerformAction(user, "create", page)
 export const canUpdate = (
-  user: Pick<PublicAccount, "role"> | null | undefined,
-) => canPerformAction(user, "update")
+  user: AuthorizationUser | null | undefined,
+  page?: PagePermission,
+) => canPerformAction(user, "update", page)
 export const canDelete = (
-  user: Pick<PublicAccount, "role"> | null | undefined,
-) => canPerformAction(user, "delete")
+  user: AuthorizationUser | null | undefined,
+  page?: PagePermission,
+) => canPerformAction(user, "delete", page)
 export const canApprove = (
-  user: Pick<PublicAccount, "role"> | null | undefined,
-) => canPerformAction(user, "approve")
+  user: AuthorizationUser | null | undefined,
+  page?: PagePermission,
+) => canPerformAction(user, "approve", page)
 
 export function canCreateInModule(
-  user: Pick<PublicAccount, "role" | "page_permissions"> | null | undefined,
+  user: AuthorizationUser | null | undefined,
   module: PagePermission,
 ) {
-  if (!user) return false
-  return user.role === "Admin" || user.page_permissions.includes(module)
+  return canCreate(user, module)
 }
 
 export function canManageExisting(
-  user: Pick<PublicAccount, "role"> | null | undefined,
+  user: AuthorizationUser | null | undefined,
+  page?: PagePermission,
 ) {
-  return user?.role === "Admin"
+  return canUpdate(user, page)
 }

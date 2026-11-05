@@ -65,9 +65,8 @@ export default function ConditionStatusManagement({
 
   const createAllowed = canCreateInModule(currentUser, "master-data")
 
-  const editAllowed = canManageExisting(currentUser)
-
-  const deleteAllowed = canDelete(currentUser)
+  const editAllowed = canManageExisting(currentUser, "master-data")
+  const deleteAllowed = canDelete(currentUser, "master-data")
 
   const [search, setSearch] = useState("")
 

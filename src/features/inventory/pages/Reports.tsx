@@ -4,7 +4,7 @@ import { useMemo, useState } from "react"
 import { Download, Printer, BarChart3, FileText } from "lucide-react"
 import { useInventory } from "@/context/InventoryContext"
 import { useAuth } from "@/auth/AuthContext"
-import { canCreateInModule } from "@/services/authorizationService"
+import { canAccessPage } from "@/services/authorizationService"
 import { downloadCsv, formatDate } from "@/utils/helpers"
 import {
   getLocationsForBusinessUnit,
@@ -25,7 +25,7 @@ const reports = [
   "Assets by Condition",
   "Assets by Business Unit",
   "Assets by Category and Group",
-  "Monthly Goods In / Goods Out Summary",
+  "Monthly Assets In / Assets Out Summary",
   "Stock Opname Discrepancy Report",
   "Asset Movement History",
 ]
@@ -33,7 +33,7 @@ export default function Reports() {
   const { assets, transactions, audits, master, businessUnit, notify } =
     useInventory()
   const { currentUser } = useAuth()
-  const reportAllowed = canCreateInModule(currentUser, "reports")
+  const reportAllowed = canAccessPage(currentUser, "reports")
   const [report, setReport] = useState(reports[0])
   const [generated, setGenerated] = useState(false)
   const [filters, setFilters] = useState({

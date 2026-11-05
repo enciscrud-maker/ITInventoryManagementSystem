@@ -63,7 +63,7 @@ export default function Audits() {
     notify,
   } = useInventory()
   const { currentUser } = useAuth()
-  const approver = canApprove(currentUser)
+  const approver = canApprove(currentUser, "stock-opname")
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [create, setCreate] = useState(false)
   const [complete, setComplete] = useState(false)
@@ -577,7 +577,7 @@ export default function Audits() {
             {impact.drifted > 0 && (
               <p className="error">
                 {impact.drifted} confirmed assets changed in inventory after
-                this session started (for example through Goods In/Out). Their
+                this session started (for example through Assets In/Out). Their
                 quantity will be replaced by the counted physical qty.
               </p>
             )}

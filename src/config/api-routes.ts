@@ -5,6 +5,8 @@ export const apiRoutes = {
     refresh: "/app-api/backend/api/auth/refresh",
     me: "/app-api/backend/api/auth/me",
   },
+  accounts: "/app-api/backend/api/accounts",
+  users: "/app-api/backend/api/users",
   masterData: {
     brands: "/app-api/backend/api/brands",
     categories: "/app-api/backend/api/categories",

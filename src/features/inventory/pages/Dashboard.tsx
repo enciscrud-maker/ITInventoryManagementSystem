@@ -357,7 +357,7 @@ export default function Dashboard() {
           <header className="card-header">
             <div>
               <h2>Recent Asset Transactions</h2>
-              <p>Latest Goods In and Goods Out activity</p>
+              <p>Latest Assets In and Assets Out activity</p>
             </div>
             <Button
               variant="ghost"
@@ -416,7 +416,7 @@ export default function Dashboard() {
             {!recentTransactions.length && (
               <EmptyState
                 title="No recent transactions"
-                description="Goods In and Goods Out activity will appear here."
+                description="Assets In and Assets Out activity will appear here."
               />
             )}
           </div>

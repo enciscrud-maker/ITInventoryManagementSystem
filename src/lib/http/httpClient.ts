@@ -79,9 +79,12 @@ export async function httpRequest<T>(
   options: RequestOptions = {},
 ): Promise<ApiResult<T>> {
   const result = await performRequest<T>(path, init, options)
+  const isReadRequest = (init.method ?? "GET").toUpperCase() === "GET"
+  const shouldRefresh =
+    result.status === 401 || (result.status === 403 && isReadRequest)
   if (
     result.success ||
-    result.status !== 401 ||
+    !shouldRefresh ||
     options.retryAfterRefresh === false ||
     path === apiRoutes.auth.login ||
     path === apiRoutes.auth.refresh ||

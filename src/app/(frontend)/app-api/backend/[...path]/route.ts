@@ -21,6 +21,11 @@ const masterDataResources = new Set([
   "api/asset-conditions",
   "api/asset-statuses",
 ])
+const accountEndpoint = /^api\/accounts(?:\/[1-9]\d*)?$/
+const usersEndpoint = /^api\/users(?:\/[1-9]\d*)?$/
+const userStatusEndpoint = /^api\/users\/[1-9]\d*\/status$/
+const userRolesEndpoint = /^api\/users\/[1-9]\d*\/roles$/
+const userPermissionsEndpoint = /^api\/users\/[1-9]\d*\/permissions$/
 const assetsReadResource = "api/assets"
 const assetIdPath = /^api\/assets\/[1-9]\d*$/
 const assetActionPath =
@@ -69,6 +74,9 @@ async function proxyAuthRequest(
   const { path } = await context.params
   const endpoint = path.join("/")
   const isAuthEndpoint = Object.hasOwn(allowedMethods, endpoint)
+  const isAccountEndpoint = accountEndpoint.test(endpoint)
+  const isUsersEndpoint = usersEndpoint.test(endpoint)
+  const isUserManagementEndpoint = isAccountEndpoint || isUsersEndpoint
   const resource = path.length >= 2 ? path.slice(0, 2).join("/") : ""
   const isMasterDataEndpoint = masterDataResources.has(resource)
   const isAssetsReadEndpoint = endpoint === assetsReadResource
@@ -118,6 +126,20 @@ async function proxyAuthRequest(
     !isMasterDataEndpoint || path.length === 2
       ? ["GET", "POST"].includes(request.method)
       : hasResourceId && ["GET", "PUT", "DELETE"].includes(request.method)
+  const allowedUserManagementMethod =
+    (endpoint === "api/accounts" && request.method === "POST") ||
+    (accountEndpoint.test(endpoint) &&
+      endpoint !== "api/accounts" &&
+      request.method === "PUT") ||
+    (endpoint === "api/users" &&
+      ["GET", "POST"].includes(request.method)) ||
+    (usersEndpoint.test(endpoint) &&
+      endpoint !== "api/users" &&
+      ["GET", "PUT"].includes(request.method)) ||
+    (userStatusEndpoint.test(endpoint) && request.method === "PATCH") ||
+    (userRolesEndpoint.test(endpoint) && request.method === "PUT") ||
+    (userPermissionsEndpoint.test(endpoint) &&
+      ["GET", "POST"].includes(request.method))
   const expectedMethod = allowedMethods[endpoint]
 
   const allowedGoodsMethod =
@@ -127,6 +149,7 @@ async function proxyAuthRequest(
     (isGoodsAttachmentEndpoint && request.method === "POST")
   if (
     !isAuthEndpoint &&
+    !isUserManagementEndpoint &&
     !isMasterDataEndpoint &&
     !isAssetsEndpoint &&
     !isStockAuditsEndpoint &&
@@ -136,6 +159,7 @@ async function proxyAuthRequest(
   }
   if (
     (isAuthEndpoint && request.method !== expectedMethod) ||
+    (isUserManagementEndpoint && !allowedUserManagementMethod) ||
     (isMasterDataEndpoint && !allowedMasterDataMethod) ||
     (isAssetsEndpoint && !allowedAssetsMethod) ||
     (isStockAuditsEndpoint && !allowedStockAuditMethod) ||
@@ -170,6 +194,7 @@ async function proxyAuthRequest(
   if (
     (endpoint === "api/auth/me" ||
       isMasterDataEndpoint ||
+      isUserManagementEndpoint ||
       isAssetsEndpoint ||
       isStockAuditsEndpoint ||
       isGoodsEndpoint) &&
@@ -197,6 +222,7 @@ async function proxyAuthRequest(
     if (
       (endpoint === "api/auth/me" ||
         isMasterDataEndpoint ||
+        isUserManagementEndpoint ||
         isAssetsEndpoint ||
         isStockAuditsEndpoint ||
         isGoodsEndpoint) &&
@@ -215,6 +241,8 @@ async function proxyAuthRequest(
       if (accessToken) headers.set("authorization", `Bearer ${accessToken}`)
     } else if (isMasterDataEndpoint && request.method !== "GET") {
       requestBody = await request.text()
+    } else if (isUserManagementEndpoint && request.method !== "GET") {
+      requestBody = await request.text()
     } else if (isStockAuditsEndpoint && request.method !== "GET") {
       requestBody = stockAuditEvidenceUploadPath.test(endpoint)
         ? await request.arrayBuffer()
@@ -231,6 +259,7 @@ async function proxyAuthRequest(
     const requestUrl = new URL(`/${endpoint}`, `${apiBaseUrl}/`)
     if (
       isMasterDataEndpoint ||
+      isUserManagementEndpoint ||
       isAssetsEndpoint ||
       isStockAuditsEndpoint ||
       isAssetsReadEndpoint ||

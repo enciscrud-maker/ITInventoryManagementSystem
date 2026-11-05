@@ -728,7 +728,7 @@ export default function MasterData() {
     if (!draft) return
     if (!creatingBackendRecord && !validation.valid) return
     const allowed = editing
-      ? canManageExisting(currentUser)
+      ? canManageExisting(currentUser, "master-data")
       : canCreateInModule(currentUser, "master-data")
     if (!allowed) {
       notify(
@@ -840,7 +840,7 @@ export default function MasterData() {
       setDeleting(null)
       return
     }
-    if (!canDelete(currentUser)) {
+    if (!canDelete(currentUser, "master-data")) {
       notify("Hanya Admin yang dapat melakukan penghapusan data.")
       setDeleting(null)
       return
@@ -1890,8 +1890,8 @@ function ActionCell({
   onDelete: (item: MasterItem) => void
 }) {
   const { currentUser } = useAuth()
-  const allowed = canDelete(currentUser)
-  const canEdit = allowEdit && canManageExisting(currentUser)
+  const allowed = canDelete(currentUser, "master-data")
+  const canEdit = allowEdit && canManageExisting(currentUser, "master-data")
   return (
     <td>
       <div className="row-actions">

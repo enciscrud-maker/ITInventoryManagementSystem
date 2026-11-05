@@ -2,6 +2,8 @@
 
 import { usePathname } from "next/navigation"
 import type { PublicAccount } from "@/auth/types"
+import type { PagePermission } from "@/config/pageRegistry"
+import { canAccessPage } from "@/services/authorizationService"
 import { AuthProvider } from "@/auth/AuthContext"
 import { InventoryProvider } from "@/context/InventoryContext"
 import { AppLayout } from "@/components/Layout"
@@ -15,8 +17,22 @@ import SettingsPage from "@/features/inventory/pages/Settings"
 import AccountsPage from "@/features/inventory/pages/Accounts"
 import NotFound from "@/features/inventory/pages/NotFound"
 
-function CurrentPage({ role }: { role: PublicAccount["role"] }) {
+function CurrentPage({ account }: { account: PublicAccount }) {
   const pathname = usePathname()
+  const pageByPath: Record<string, PagePermission> = {
+    "/": "dashboard",
+    "/assets": "asset-inventory",
+    "/goods-in": "goods-in",
+    "/goods-out": "goods-out",
+    "/audits": "stock-opname",
+    "/master-data": "master-data",
+    "/reports": "reports",
+    "/settings": "settings",
+  }
+  if (pathname === "/accounts")
+    return account.is_main_admin ? <AccountsPage /> : <NotFound />
+  const page = pageByPath[pathname]
+  if (!page || !canAccessPage(account, page)) return <NotFound />
   if (pathname === "/") return <Dashboard />
   if (pathname === "/assets") return <AssetInventory />
   if (pathname === "/goods-in") return <Transactions direction="In" />
@@ -25,7 +41,6 @@ function CurrentPage({ role }: { role: PublicAccount["role"] }) {
   if (pathname === "/master-data") return <MasterData />
   if (pathname === "/reports") return <Reports />
   if (pathname === "/settings") return <SettingsPage />
-  if (pathname === "/accounts" && role === "Admin") return <AccountsPage />
   return <NotFound />
 }
 
@@ -34,7 +49,7 @@ export function InventoryApp({ account }: { account: PublicAccount }) {
     <AuthProvider initialUser={account}>
       <InventoryProvider>
         <AppLayout>
-          <CurrentPage role={account.role} />
+          <CurrentPage account={account} />
         </AppLayout>
       </InventoryProvider>
     </AuthProvider>

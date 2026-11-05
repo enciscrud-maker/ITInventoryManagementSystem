@@ -520,7 +520,7 @@ export function AssetDrawer() {
   const { selectedAsset, setSelectedAsset, transactions, saveAsset, master } =
     useInventory()
   const { currentUser } = useAuth()
-  const manageAllowed = canManageExisting(currentUser)
+  const manageAllowed = canManageExisting(currentUser, "asset-inventory")
   const [tab, setTab] = useState("Overview")
   const [editing, setEditing] = useState(false)
   const [dispose, setDispose] = useState(false)

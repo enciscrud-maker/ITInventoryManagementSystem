@@ -1,4 +1,5 @@
 import type { PublicAccount, AccountRole, PagePermission } from "@/auth/types"
+import { pageRegistry } from "@/config/pageRegistry"
 
 type AccountDto = Record<string, unknown>
 
@@ -13,14 +14,56 @@ const text = (input: unknown, fallback = "") =>
     ? String(input)
     : fallback
 
-const validPermissions: PagePermission[] = [
-  "asset-inventory",
-  "goods-in",
-  "goods-out",
-  "stock-opname",
-  "master-data",
-  "reports",
-]
+const permissionPages: Record<PagePermission, string[]> = {
+  dashboard: ["dashboard.read"],
+  "asset-inventory": [
+    "asset.read",
+    "asset.create",
+    "asset.update",
+    "asset.import",
+    "asset.export",
+  ],
+  "goods-in": ["good.in.read", "good.in.create", "good.in.status"],
+  "goods-out": ["good.out.read", "good.out.create", "good.out.status"],
+  "stock-opname": [
+    "audit.read",
+    "audit.create",
+    "audit.update",
+    "audit.approve",
+  ],
+  "master-data": [
+    "master.read",
+    "master.create",
+    "master.update",
+    "master.delete",
+  ],
+  reports: ["report.read"],
+  settings: ["settings.read"],
+}
+
+const mapPagePermissions = (
+  pagePermissions: unknown,
+  permissions: unknown,
+): PagePermission[] => {
+  const explicitPages = Array.isArray(pagePermissions)
+    ? pagePermissions.filter(
+        (page): page is PagePermission =>
+          typeof page === "string" &&
+          pageRegistry.some((registered) => registered.id === page),
+      )
+    : null
+  if (explicitPages) return explicitPages
+  if (!Array.isArray(permissions)) return []
+  const values = permissions.filter(
+    (permission): permission is string => typeof permission === "string",
+  )
+  return pageRegistry
+    .filter(({ id }) =>
+      values.includes(id) ||
+      permissionPages[id].some((permission) => values.includes(permission)),
+    )
+    .map(({ id }) => id)
+}
 
 export function toPublicAccount(input: unknown): PublicAccount | null {
   if (typeof input !== "object" || input === null || Array.isArray(input))
@@ -44,8 +87,8 @@ export function toPublicAccount(input: unknown): PublicAccount | null {
     roleInput === "Admin" || roleInput === "Member" ? roleInput : null
   if (!id || !name || !nik || !role) return null
 
-  const permissions =
-    dto.permissions ?? value(dto, "pagePermissions", "page_permissions")
+  const permissions = dto.permissions
+  const pagePermissions = value(dto, "pagePermissions", "page_permissions")
   return {
     id,
     account_id: text(
@@ -55,18 +98,13 @@ export function toPublicAccount(input: unknown): PublicAccount | null {
     name,
     nik,
     email: text(dto.employeeEmail ?? value(dto, "email", "email")),
-    phone: text(value(dto, "phone", "phone")),
+    phone: text(dto.employeePhone ?? value(dto, "phone", "phone")),
     profile_photo: text(
       dto.profilePhotoUrl ?? value(dto, "profilePhoto", "profile_photo"),
     ),
     role,
-    page_permissions: Array.isArray(permissions)
-      ? permissions.filter(
-          (permission): permission is PagePermission =>
-            typeof permission === "string" &&
-            validPermissions.includes(permission as PagePermission),
-        )
-      : [],
+    page_permissions: mapPagePermissions(pagePermissions, permissions),
+    is_main_admin: dto.isMainAdmin === true || dto.is_main_admin === true,
     position: text(value(dto, "position", "position")),
     department: text(value(dto, "department", "department")),
     business_unit: text(value(dto, "businessUnit", "business_unit")),

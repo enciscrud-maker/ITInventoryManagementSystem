@@ -189,7 +189,7 @@ function TransactionSummary({
           </SummaryField>
           <SummaryField label="NIK">{party.nik}</SummaryField>
           <SummaryField label="Department">{party.department}</SummaryField>
-          <SummaryField label={incoming ? "Goods In Type" : "Goods Out Type"}>
+          <SummaryField label={incoming ? "Assets In Type" : "Assets Out Type"}>
             <>
               {transaction.type}
               {transaction.statusCode && (
@@ -348,7 +348,10 @@ export default function Transactions({
     currentUser,
     direction === "In" ? "goods-in" : "goods-out",
   )
-  const manageAllowed = canManageExisting(currentUser)
+  const manageAllowed = canManageExisting(
+    currentUser,
+    direction === "In" ? "goods-in" : "goods-out",
+  )
   const incoming = direction === "In"
   const types = master.statuses.filter((item) => item.usage === direction)
   const typeNames = types.map((item) => item.name)
@@ -692,7 +695,7 @@ export default function Transactions({
   return (
     <div className="page">
       <PageHeader
-        title={incoming ? "Goods In" : "Goods Out"}
+        title={incoming ? "Assets In" : "Assets Out"}
         subtitle={
           incoming
             ? "Record incoming assets and inventory receipts."
@@ -788,7 +791,7 @@ export default function Transactions({
                 <th>Document Number</th>
                 <th>Request Number</th>
                 <th>Total Assets</th>
-                <th>{incoming ? "Goods In Type" : "Goods Out Type"}</th>
+                <th>{incoming ? "Assets In Type" : "Assets Out Type"}</th>
                 <th>{incoming ? "Source / User" : "Recipient / User"}</th>
                 <th>{incoming ? "Destination" : "Destination / Provider"}</th>
                 <th>Status</th>
@@ -926,7 +929,7 @@ export default function Transactions({
                   }
                 />
                 <Select
-                  label={`${incoming ? "Goods In" : "Goods Out"} Type *`}
+                  label={`${incoming ? "Assets In" : "Assets Out"} Type *`}
                   value={form.statusId}
                   onChange={(event) => {
                     const selected = types.find(

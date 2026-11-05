@@ -118,18 +118,21 @@ type AccountInput = {
   is_active?: boolean
 }
 
-const allowedPagePermissions: PagePermission[] = [
+const allowedPagePermissions = [
   "asset-inventory",
   "goods-in",
   "goods-out",
   "stock-opname",
   "master-data",
   "reports",
-]
+] as const
+type PayloadPagePermission = (typeof allowedPagePermissions)[number]
+const allowedPagePermissionSet = new Set<string>(allowedPagePermissions)
 
 const validPagePermissions = (input: PagePermission[] | undefined) =>
-  (input ?? []).filter((permission) =>
-    allowedPagePermissions.includes(permission),
+  (input ?? []).filter(
+    (permission): permission is PayloadPagePermission =>
+      allowedPagePermissionSet.has(permission),
   )
 
 export async function getAccountsAction(): Promise<ActionResult<PublicAccount[]>> {

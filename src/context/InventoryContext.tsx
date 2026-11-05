@@ -67,6 +67,7 @@ import {
 import { useAuth } from "../auth/AuthContext"
 import {
   canApprove,
+  canAccessPage,
   canCreateInModule,
   canDelete,
   canManageExisting,
@@ -391,6 +392,20 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     window.setTimeout(() => setToast(""), 3000)
   }, [])
   const refreshAssets = useCallback(async () => {
+    const shouldLoad = [
+      "asset-inventory",
+      "goods-in",
+      "goods-out",
+      "stock-opname",
+      "dashboard",
+    ] as const
+    const canReadAssets = shouldLoad.some((page) =>
+      canAccessPage(currentUser, page),
+    )
+    if (!canReadAssets) {
+      setAssets([])
+      return true
+    }
     const result = await assetsApi.list()
     if (!result.success) {
       notify(result.error)
@@ -398,11 +413,20 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     }
     setAssets(result.data)
     return true
-  }, [notify])
+  }, [currentUser, notify])
   useEffect(() => {
     void refreshAssets()
   }, [refreshAssets])
   const refreshAudits = useCallback(async () => {
+    if (
+      !canAccessPage(currentUser, "stock-opname") &&
+      !canAccessPage(currentUser, "dashboard")
+    ) {
+      setAudits([])
+      setAuditDataError("")
+      setAuditDataStatus("ready")
+      return true
+    }
     setAuditDataStatus("loading")
     const result = await stockAuditsApi.list({}, [], master.locations)
     if (!result.success) {
@@ -424,7 +448,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     setAuditDataError("")
     setAuditDataStatus("ready")
     return true
-  }, [master.locations])
+  }, [currentUser, master.locations])
   useEffect(() => {
     void refreshAudits()
   }, [currentUser.id, refreshAudits])
@@ -446,25 +470,34 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     [assets, master.locations, notify],
   )
   const refreshTransactions = useCallback(async () => {
+    const loadGoodsIn =
+      canAccessPage(currentUser, "goods-in") ||
+      canAccessPage(currentUser, "dashboard")
+    const loadGoodsOut =
+      canAccessPage(currentUser, "goods-out") ||
+      canAccessPage(currentUser, "dashboard")
     const [goodsInResult, goodsOutResult] = await Promise.all([
-      transactionsApi.list("In"),
-      transactionsApi.list("Out"),
+      loadGoodsIn ? transactionsApi.list("In") : Promise.resolve(null),
+      loadGoodsOut ? transactionsApi.list("Out") : Promise.resolve(null),
     ])
-    if (!goodsInResult.success) {
+    if (goodsInResult && !goodsInResult.success) {
       notify(goodsInResult.error)
       return false
     }
-    if (!goodsOutResult.success) {
+    if (goodsOutResult && !goodsOutResult.success) {
       notify(goodsOutResult.error)
       return false
     }
     setTransactions(
-      [...goodsInResult.data, ...goodsOutResult.data].sort((a, b) =>
+      [
+        ...(goodsInResult?.data ?? []),
+        ...(goodsOutResult?.data ?? []),
+      ].sort((a, b) =>
         (b.formIssueDate ?? b.date).localeCompare(a.formIssueDate ?? a.date),
       ),
     )
     return true
-  }, [notify])
+  }, [currentUser, notify])
   useEffect(() => {
     void refreshTransactions()
   }, [currentUser.id, refreshTransactions])
@@ -498,6 +531,23 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     [notify, transactions],
   )
   const refreshMasterData = useCallback(async () => {
+    const shouldLoad = [
+      "asset-inventory",
+      "goods-in",
+      "goods-out",
+      "stock-opname",
+      "master-data",
+      "dashboard",
+    ] as const
+    const canReadLookups = shouldLoad.some((page) =>
+      canAccessPage(currentUser, page),
+    )
+    if (!canReadLookups) {
+      setMasterDataStatus("ready")
+      setMasterDataError("")
+      setMasterDataRefreshing(false)
+      return true
+    }
     if (masterDataScope.current !== currentUser.id) {
       masterDataScope.current = currentUser.id
       masterDataLoaded.current = false
@@ -526,7 +576,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     setMasterDataError("")
     setMasterDataRefreshing(false)
     return true
-  }, [currentUser.id])
+  }, [currentUser])
   useEffect(() => {
     void refreshMasterData()
 
@@ -589,7 +639,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       : undefined
     if (
       existing
-        ? !canManageExisting(currentUser)
+        ? !canManageExisting(currentUser, "asset-inventory")
         : !canCreateInModule(currentUser, "asset-inventory")
     ) {
       notify("You do not have permission to save this asset")
@@ -778,7 +828,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     )
     recordDataActivity({
       actor: currentUser,
-      module: saved.direction === "In" ? "Goods In" : "Goods Out",
+      module: saved.direction === "In" ? "Assets In" : "Assets Out",
       action: "Create",
       recordId: saved.id,
       recordLabel: saved.document,
@@ -819,8 +869,9 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     status: TransactionStatus,
     notes?: string,
   ) => {
-    if (!canManageExisting(currentUser)) {
-      notify("Only Admin can update existing transactions")
+    const page = direction === "In" ? "goods-in" : "goods-out"
+    if (!canManageExisting(currentUser, page)) {
+      notify("You do not have permission to update existing transactions")
       return false
     }
     const transaction = transactions.find(
@@ -872,7 +923,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     )
     recordDataActivity({
       actor: currentUser,
-      module: transaction.direction === "In" ? "Goods In" : "Goods Out",
+      module: transaction.direction === "In" ? "Assets In" : "Assets Out",
       action: "Update",
       recordId: updated.id,
       recordLabel: updated.document,
@@ -967,7 +1018,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     const existing = findAudit(audit.id)
     if (
       existing
-        ? !canManageExisting(currentUser)
+        ? !canManageExisting(currentUser, "stock-opname")
         : !canCreateInModule(currentUser, "stock-opname")
     ) {
       notify("You do not have permission to save this stock opname")
@@ -995,7 +1046,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
         item.confirmed &&
         !existing?.items.find((x) => x.assetId === item.assetId)?.confirmed,
     )
-    if (approvesSomething && !canApprove(currentUser)) {
+    if (approvesSomething && !canApprove(currentUser, "stock-opname")) {
       notify("Only approvers can confirm stock opname results")
       return null
     }
@@ -1058,13 +1109,13 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       notify("Completed sessions are locked")
       return null
     }
-    if (!canManageExisting(currentUser)) {
+    if (!canManageExisting(currentUser, "stock-opname")) {
       notify("You do not have permission to update this stock opname")
       return
     }
     const confirmChanged =
       changes.confirmed !== undefined && changes.confirmed !== item.confirmed
-    if (confirmChanged && !canApprove(currentUser)) {
+    if (confirmChanged && !canApprove(currentUser, "stock-opname")) {
       notify("Only approvers can confirm stock opname results")
       return
     }
@@ -1161,7 +1212,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     if (!audit) return { ok: false, message: "Session not found" }
     if (audit.status === "Completed")
       return { ok: false, message: "This session is completed" }
-    if (!canManageExisting(currentUser))
+    if (!canManageExisting(currentUser, "stock-opname"))
       return { ok: false, message: "You do not have permission to scan" }
     const clean = code.trim()
     const assetIdByInternalId = matchAssetId(
@@ -1227,7 +1278,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       notify("This session is locked")
       return 0
     }
-    if (!canManageExisting(currentUser)) {
+    if (!canManageExisting(currentUser, "stock-opname")) {
       notify("You do not have permission to import quantities")
       return 0
     }
@@ -1292,7 +1343,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
   const resolveUnscannedAudit = (auditId: string) => {
     const audit = findAudit(auditId)
     if (!audit || audit.status === "Completed") return 0
-    if (!canManageExisting(currentUser)) {
+    if (!canManageExisting(currentUser, "stock-opname")) {
       notify("You do not have permission to update this stock opname")
       return 0
     }
@@ -1336,7 +1387,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       notify("This session is locked")
       return false
     }
-    if (!canManageExisting(currentUser)) {
+    if (!canManageExisting(currentUser, "stock-opname")) {
       notify("You do not have permission to upload evidence")
       return false
     }
@@ -1404,7 +1455,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     const evidencePath = item?.evidence?.[index]
     if (!audit || audit.status === "Completed" || !item || !evidencePath)
       return false
-    if (!canManageExisting(currentUser)) {
+    if (!canManageExisting(currentUser, "stock-opname")) {
       notify("You do not have permission to remove evidence")
       return false
     }
@@ -1441,7 +1492,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     const audit = findAudit(auditId)
     if (!audit || audit.status === "Completed" || audit.inventoryAdjusted)
       return false
-    if (!canApprove(currentUser)) {
+    if (!canApprove(currentUser, "stock-opname")) {
       notify("Only approvers can complete a stock opname")
       return false
     }
@@ -1484,7 +1535,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     )
     if (
       existingRecord
-        ? !canManageExisting(currentUser)
+        ? !canManageExisting(currentUser, "master-data")
         : !canCreateInModule(currentUser, "master-data")
     ) {
       notify("You do not have permission to save this master record")
@@ -2258,7 +2309,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     }
     if (
       existing
-        ? !canManageExisting(currentUser)
+        ? !canManageExisting(currentUser, "master-data")
         : !canCreateInModule(currentUser, "master-data")
     ) {
       notify("You do not have permission to save this Business Unit")
@@ -2388,7 +2439,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     }
     if (
       existing
-        ? !canManageExisting(currentUser)
+        ? !canManageExisting(currentUser, "master-data")
         : !canCreateInModule(currentUser, "master-data")
     ) {
       notify("You do not have permission to save this Location")
@@ -2510,7 +2561,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     return true
   }
   const deleteBusinessUnit = async (id: string) => {
-    if (!canDelete(currentUser)) {
+    if (!canDelete(currentUser, "master-data")) {
       notify("Hanya Admin yang dapat melakukan penghapusan data.")
       return false
     }
@@ -2563,7 +2614,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     return true
   }
   const deleteLocation = async (id: string) => {
-    if (!canDelete(currentUser)) {
+    if (!canDelete(currentUser, "master-data")) {
       notify("Hanya Admin yang dapat melakukan penghapusan data.")
       return false
     }
@@ -2618,7 +2669,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     return true
   }
   const deleteMaster = (key: MasterKey, id: string) => {
-    if (!canDelete(currentUser)) {
+    if (!canDelete(currentUser, "master-data")) {
       notify("Hanya Admin yang dapat melakukan penghapusan data.")
       return false
     }

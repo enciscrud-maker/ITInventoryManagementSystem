@@ -151,8 +151,8 @@ export const Accounts: CollectionConfig = {
       defaultValue: [],
       options: [
         { label: "Asset Inventory", value: "asset-inventory" },
-        { label: "Goods In", value: "goods-in" },
-        { label: "Goods Out", value: "goods-out" },
+        { label: "Assets In", value: "goods-in" },
+        { label: "Assets Out", value: "goods-out" },
         { label: "Stock Opname", value: "stock-opname" },
         { label: "Master Data", value: "master-data" },
         { label: "Reports & Exports", value: "reports" },
