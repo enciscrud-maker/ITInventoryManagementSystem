@@ -74,28 +74,29 @@ const pagesFrom = (value: unknown, depth = 0): number => {
 }
 
 export type AssetRequest = {
-  catId?: number
-  groupId?: number
-  typeId?: number
-  brandId?: number
-  assetName?: string | null
-  assetType?: "In" | "Out"
+  catId: number
+  groupId: number
+  typeId: number
+  brandId: number
+  assetName: string
+  assetType: "In"
   statusId: number
-  assetCode?: string | null
-  assetPrefix?: string | null
-  quantity?: number | null
-  unitOfMeasure?: string | null
-  serialNumber?: string | null
-  assetTag?: string | null
-  purchaseOrderNumber?: string | null
-  sapMaterialNumber?: string | null
-  assetValue?: number | null
-  description?: string | null
-  busUnitId?: number | null
-  locationId?: number | null
-  conditionId?: number | null
-  businessUnit?: string | null
-  rowVersion?: string | null
+  assetPrefix: string | null
+  assetCode: string | null
+  quantity: number
+  unitOfMeasure: string
+  serialNumber: string
+  assetTag: string | null
+  purchaseOrderNumber: string | null
+  sapMaterialNumber: string | null
+  assetValue: number | null
+  description: string | null
+  busUnitId: number
+  locationId: number
+  conditionId: number | null
+  modelId: number | null
+  businessUnit: string
+  rowVersion: string | null
 }
 
 export type AssetImportError = {
@@ -228,6 +229,7 @@ const toAsset = (value: unknown): Asset | null => {
     condition: condition.name,
     quantity: numeric(quantityValue) ?? 0,
     uom: text(read(value, "uom", "unitOfMeasure", "unit")) || "UNIT",
+    createdDt: text(read(value, "createdDt")) || undefined,
     updatedAt: text(
       read(value, "updatedAt", "lastUpdated", "modifiedAt", "lastUpdatedDate"),
     ),
@@ -300,6 +302,7 @@ function toAssetRequest(asset: Asset): ApiResult<AssetRequest> {
       typeId,
       brandId,
       assetName: asset.model,
+      assetType: "In",
       statusId,
       assetCode: asset.assetCode ?? null,
       assetPrefix: asset.assetPrefix ?? null,
@@ -312,8 +315,9 @@ function toAssetRequest(asset: Asset): ApiResult<AssetRequest> {
       assetValue: asset.value ?? null,
       description: asset.description ?? null,
       busUnitId,
-      locationId: locationId ?? null,
-      ...(conditionId ? { conditionId } : {}),
+      locationId,
+      conditionId: conditionId ?? null,
+      modelId: numericId(asset.modelId) ?? null,
       businessUnit: asset.businessUnit,
       rowVersion: asset.rowVersion ?? null,
     },

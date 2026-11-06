@@ -60,7 +60,7 @@ export type Asset = {
   quantity: number
 
   uom: string
-
+  createdDt?: string
   updatedAt: string
 
   po?: string

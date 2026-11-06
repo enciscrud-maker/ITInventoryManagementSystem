@@ -29,7 +29,7 @@ export function generateAssetPrefix(
     )
     return String(item?.prefix ?? item?.[field] ?? item?.code ?? "").trim()
   }
-  return `${prefix("categories", values.categoryId, values.category, "category_prefix")}${prefix("brands", values.brandId, values.brand, "brand_code")}${prefix("types", values.typeId, values.type, "type_code")}`
+  return `${prefix("categories", values.categoryId, values.category, "category_prefix")}${prefix("groups", values.groupId, values.group, "group_prefix")}${prefix("types", values.typeId, values.type, "type_code")}${prefix("brands", values.brandId, values.brand, "brand_code")}${prefix("businessUnits", values.businessUnitId, values.businessUnit, "code")}`
     .replace(/\W/g, "")
     .toUpperCase()
 }
