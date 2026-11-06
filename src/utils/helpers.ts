@@ -18,11 +18,39 @@ export function generateAssetPrefix(
   values: Partial<Asset>,
   master: Record<string, MasterItem[]>,
 ) {
-  const code = (key: string, name?: string) =>
-    master[key]?.find((item) => item.name === name)?.code ?? "XX"
-  return `${code("categories", values.category)}${code("groups", values.group)}${code("types", values.type)}${code("brands", values.brand)}${values.businessUnit ?? "XXX"}`
+  const prefix = (
+    key: string,
+    id: string | undefined,
+    name: string | undefined,
+    field: keyof MasterItem,
+  ) => {
+    const item = master[key]?.find(
+      (candidate) => candidate.id === id || candidate.name === name,
+    )
+    return String(item?.prefix ?? item?.[field] ?? item?.code ?? "").trim()
+  }
+  return `${prefix("categories", values.categoryId, values.category, "category_prefix")}${prefix("brands", values.brandId, values.brand, "brand_code")}${prefix("types", values.typeId, values.type, "type_code")}`
     .replace(/\W/g, "")
     .toUpperCase()
+}
+
+export function generateAssetCode(
+  prefix: string,
+  assets: Asset[],
+  excludeAssetId?: string,
+) {
+  const normalizedPrefix = prefix.trim().toUpperCase()
+  if (!normalizedPrefix) return ""
+
+  const max = assets.reduce((current, asset) => {
+    if (asset.id === excludeAssetId) return current
+    const code = (asset.assetCode ?? "").trim().toUpperCase()
+    if (!code.startsWith(normalizedPrefix)) return current
+    const suffix = code.slice(normalizedPrefix.length)
+    return /^\d+$/.test(suffix) ? Math.max(current, Number(suffix)) : current
+  }, 0)
+
+  return `${normalizedPrefix}${String(max + 1).padStart(5, "0")}`
 }
 
 export function generateAssetId(

@@ -108,8 +108,8 @@ export function LoginForm() {
           <Input
             autoFocus
             autoComplete="username"
-            label="Nama / NIK"
-            placeholder="Enter your registered name or NIK"
+            label="NIK"
+            placeholder="Enter your registered NIK"
             value={identity}
             onChange={(event) => setIdentity(event.target.value)}
           />

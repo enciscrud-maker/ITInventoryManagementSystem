@@ -81,6 +81,7 @@ export type AssetRequest = {
   assetName?: string | null
   assetType?: "In" | "Out"
   statusId: number
+  assetCode?: string | null
   assetPrefix?: string | null
   quantity?: number | null
   unitOfMeasure?: string | null
@@ -273,6 +274,7 @@ function toAssetRequest(asset: Asset): ApiResult<AssetRequest> {
       brandId,
       assetName: asset.model,
       statusId,
+      assetCode: asset.assetCode ?? null,
       assetPrefix: asset.assetPrefix ?? null,
       quantity: asset.quantity,
       unitOfMeasure: asset.uom,
