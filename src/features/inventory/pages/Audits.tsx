@@ -8,7 +8,6 @@ import {
   Plus,
   CheckCircle2,
   ScanLine,
-  Trash2,
   Download,
   Camera,
   Upload,
@@ -47,6 +46,7 @@ import {
   Badge,
   Button,
   ConfirmDialog,
+  DeleteButton,
   EmptyState,
   Input,
   Modal,
@@ -990,7 +990,6 @@ export default function Audits() {
                 <th>Date</th>
                 <th>Auditor</th>
                 <th>Business Unit</th>
-                <th>Location</th>
                 <th>Total</th>
                 <th>Verified</th>
                 <th>Progress</th>
@@ -1020,9 +1019,20 @@ export default function Audits() {
                     <td>{a.date}</td>
                     <td>{a.auditor}</td>
                     <td>{a.businessUnit}</td>
-                    <td>{a.location}</td>
                     <td>{total}</td>
-                    <td>{hasVerifiedCount ? verified : "—"}</td>
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={a.isVerified === true}
+                        disabled
+                        aria-label={`Verified ${a.name}`}
+                        title={
+                          a.isVerified
+                            ? "All assets match and are confirmed."
+                            : "Not all assets are matching and confirmed."
+                        }
+                      />
+                    </td>
                     <td>
                       {hasVerifiedCount ? (
                         <>
@@ -1049,17 +1059,15 @@ export default function Audits() {
                         Open
                       </Button>
                       {canDelete(currentUser, "stock-opname") && (
-                        <Button
-                          size="sm"
-                          variant="danger"
+                        <DeleteButton
+                          label={`Delete Stock Opname session ${a.name}`}
+                          title={`Delete Stock Opname session ${a.name}`}
                           disabled={deletingAudit}
                           onClick={(event) => {
                             event.stopPropagation()
                             setDeleteTarget(a)
                           }}
-                        >
-                          <Trash2 size={14} /> Delete
-                        </Button>
+                        />
                       )}
                     </td>
                   </tr>
@@ -1297,10 +1305,8 @@ export default function Audits() {
                               )}
                             </td>
                             <td>
-                              <Button
-                                aria-label={`Remove asset ${index + 1}`}
-                                size="sm"
-                                variant="ghost"
+                              <DeleteButton
+                                label={`Remove asset ${index + 1}`}
                                 onClick={() => {
                                   setSelectedAssetIds((ids) =>
                                     ids.filter((_, row) => row !== index),
@@ -1308,9 +1314,7 @@ export default function Audits() {
 
                                   setCreateError("")
                                 }}
-                              >
-                                <Trash2 size={15} />
-                              </Button>
+                              />
                             </td>
                           </tr>
                         )

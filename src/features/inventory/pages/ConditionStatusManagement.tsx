@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react"
 
-import { Edit3, Plus, Trash2 } from "lucide-react"
+import { Edit3, Plus } from "lucide-react"
 
 import { useAuth } from "@/auth/AuthContext"
 
@@ -12,6 +12,7 @@ import {
   Badge,
   Button,
   ConfirmDialog,
+  DeleteButton,
   EmptyState,
   IconButton,
   Input,
@@ -357,14 +358,12 @@ export default function ConditionStatusManagement({
                           </IconButton>
                         )}
                         {deleteAllowed && (
-                          <IconButton
+                          <DeleteButton
                             label={`Delete Condition ${item.name}`}
                             onClick={() =>
                               setDeleting({ type: "condition", item })
                             }
-                          >
-                            <Trash2 size={15} />
-                          </IconButton>
+                          />
                         )}
                       </div>
                     </td>
@@ -415,14 +414,12 @@ export default function ConditionStatusManagement({
                           </IconButton>
                         )}
                         {deleteAllowed && (
-                          <IconButton
+                          <DeleteButton
                             label={`Delete Status ${item.name}`}
                             onClick={() =>
                               setDeleting({ type: "status", item })
                             }
-                          >
-                            <Trash2 size={15} />
-                          </IconButton>
+                          />
                         )}
                       </div>
                     </td>

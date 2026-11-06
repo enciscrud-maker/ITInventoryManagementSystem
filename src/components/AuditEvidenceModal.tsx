@@ -3,8 +3,8 @@
 /** Gallery + upload for the evidence photos of one asset in a session. */ /* eslint-disable-next-line @next/next/no-img-element */
 
 import { useState } from "react"
-import { Camera, Trash2 } from "lucide-react"
-import { Button, Modal } from "./ui"
+import { Camera } from "lucide-react"
+import { Button, DeleteButton, Modal } from "./ui"
 import { MAX_EVIDENCE_PER_ASSET } from "../utils/audit"
 export function AuditEvidenceModal({
   open,
@@ -58,14 +58,10 @@ export function AuditEvidenceModal({
               {}
               <img src={src} alt={`Evidence ${index + 1}`} />
               {!readOnly && onRemove && (
-                <Button
-                  size="sm"
-                  variant="danger"
+                <DeleteButton
+                  label={`Remove evidence ${index + 1}`}
                   onClick={() => onRemove(index)}
-                  aria-label={`Remove evidence ${index + 1}`}
-                >
-                  <Trash2 size={14} /> Remove
-                </Button>
+                />
               )}
             </figure>
           ))}

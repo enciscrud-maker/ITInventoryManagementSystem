@@ -8,6 +8,7 @@ import {
   Inbox,
   Eye,
   EyeOff,
+  Trash2,
 } from "lucide-react"
 import { useEffect, useId, useState } from "react"
 import { cn } from "../utils/helpers"
@@ -41,6 +42,28 @@ export function Button({
     >
       {children}
     </button>
+  )
+}
+export function DeleteButton({
+  label,
+  title = label,
+  className,
+  ...props
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+  label: string
+  title?: string
+}) {
+  return (
+    <Button
+      size="sm"
+      variant="ghost"
+      aria-label={label}
+      title={title}
+      className={className}
+      {...props}
+    >
+      <Trash2 size={16} />
+    </Button>
   )
 }
 export function IconButton({

@@ -31,6 +31,8 @@ type StockAuditListDto = {
 
   verifiedCount?: number
 
+  isVerified?: boolean
+
   discrepancyCount: number
 }
 
@@ -354,6 +356,8 @@ function toAudit(
     itemCount: dto.itemCount,
 
     verifiedCount: dto.verifiedCount,
+
+    isVerified: dto.isVerified,
 
     discrepancyCount: dto.discrepancyCount,
 

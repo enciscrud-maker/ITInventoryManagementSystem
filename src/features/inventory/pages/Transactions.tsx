@@ -7,7 +7,6 @@ import {
   PackageMinus,
   PackagePlus,
   Plus,
-  Trash2,
 } from "lucide-react"
 import { useInventory } from "@/context/InventoryContext"
 import type {
@@ -31,6 +30,7 @@ import {
 import {
   Badge,
   Button,
+  DeleteButton,
   EmptyState,
   IconButton,
   Input,
@@ -1191,7 +1191,7 @@ export default function Transactions({
                               </>
                             )}
                             <td>
-                              <IconButton
+                              <DeleteButton
                                 label={`Remove asset row ${index + 1}`}
                                 disabled={form.assets.length === 1}
                                 onClick={() =>
@@ -1202,9 +1202,7 @@ export default function Transactions({
                                     ),
                                   )
                                 }
-                              >
-                                <Trash2 size={16} />
-                              </IconButton>
+                              />
                             </td>
                           </tr>
                         )

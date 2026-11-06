@@ -12,7 +12,6 @@ import {
   MapPin,
   Printer,
   Edit3,
-  Trash2,
 } from "lucide-react"
 import { useInventory } from "@/context/InventoryContext"
 import { useAuth } from "@/auth/AuthContext"

@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Edit3, Plus, Trash2 } from "lucide-react"
+import { Edit3, Plus } from "lucide-react"
 import { useAuth } from "@/auth/AuthContext"
 import { useInventory } from "@/context/InventoryContext"
 import {
@@ -12,6 +12,7 @@ import {
 import {
   Button,
   ConfirmDialog,
+  DeleteButton,
   EmptyState,
   Input,
   Modal,
@@ -175,20 +176,16 @@ export default function BusinessUnitManagement({
                           <Edit3 size={14} /> Edit
                         </Button>
                       )}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        disabled={!deleteAllowed}
-                        aria-label={`Delete ${unit.name}`}
+                      <DeleteButton
+                        label={`Delete ${unit.name}`}
                         title={
                           deleteAllowed
                             ? `Delete ${unit.name}`
                             : "Only Admin can delete data."
                         }
+                        disabled={!deleteAllowed}
                         onClick={() => requestDeleteUnit(unit.id)}
-                      >
-                        <Trash2 size={14} />
-                      </Button>
+                      />
                     </div>
                   </td>
                 </tr>
@@ -332,15 +329,12 @@ export default function BusinessUnitManagement({
                                   <Edit3 size={14} /> Edit
                                 </Button>
                               )}
-                              <Button
-                                size="sm"
-                                variant="ghost"
+                              <DeleteButton
+                                label={`Delete ${location.name}`}
+                                title={`Delete ${location.name}`}
                                 disabled={!deleteAllowed}
-                                aria-label={`Delete ${location.name}`}
                                 onClick={() => setDeletingLocation(location.id)}
-                              >
-                                <Trash2 size={14} />
-                              </Button>
+                              />
                             </div>
                           </td>
                         </tr>

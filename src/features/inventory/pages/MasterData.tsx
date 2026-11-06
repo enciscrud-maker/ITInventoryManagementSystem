@@ -1,7 +1,7 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Edit3, Plus, Trash2 } from "lucide-react"
+import { Edit3, Plus } from "lucide-react"
 import { useInventory } from "@/context/InventoryContext"
 import { useAuth } from "@/auth/AuthContext"
 import {
@@ -47,6 +47,7 @@ import {
 import {
   Button,
   ConfirmDialog,
+  DeleteButton,
   EmptyState,
   Input,
   Modal,
@@ -1900,19 +1901,15 @@ function ActionCell({
             <Edit3 size={14} /> Edit
           </Button>
         )}
-        <Button
-          size="sm"
-          variant="ghost"
-          aria-label={`Delete ${item.name}`}
+        <DeleteButton
+          label={`Delete ${item.name}`}
           aria-disabled={!allowed}
           title={
             allowed ? `Delete ${item.name}` : "Only Admin can delete data."
           }
           className={!allowed ? "restricted-action" : ""}
           onClick={() => onDelete(item)}
-        >
-          <Trash2 size={14} />
-        </Button>
+        />
       </div>
     </td>
   )

@@ -2,11 +2,11 @@
 
 import { useEffect, useState, useTransition } from "react"
 import Image from "next/image"
-import { Camera, Trash2 } from "lucide-react"
+import { Camera } from "lucide-react"
 import { useAuth } from "../auth/AuthContext"
 import { updateProfile, uploadProfilePhoto } from "../auth/client"
 import { useInventory } from "../context/InventoryContext"
-import { Button, Input, Modal, Select } from "./ui"
+import { Button, DeleteButton, Input, Modal, Select } from "./ui"
 import {
   recordDataActivity,
   summarizeChanges,
@@ -141,16 +141,14 @@ export function ProfileEditor({
             />
           </label>
           {(photoSource || photo) && (
-            <Button
-              variant="ghost"
+            <DeleteButton
+              label="Remove profile photo"
               onClick={() => {
                 setPhoto(null)
                 setPreview("")
                 setRemovePhoto(true)
               }}
-            >
-              <Trash2 size={15} /> Remove
-            </Button>
+            />
           )}
           <small>JPG, PNG, or WebP. Maximum 2 MB.</small>
         </div>

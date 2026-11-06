@@ -291,6 +291,8 @@ export type Audit = {
 
   verifiedCount?: number
 
+  isVerified?: boolean
+
   discrepancyCount?: number
 
   detailsLoaded?: boolean
