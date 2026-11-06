@@ -27,8 +27,10 @@ type GoodItemRequest = {
 
 type GoodCreateRequest = {
   requestId: string
+  goodName: string
   transactionType: ApiTransactionType
   businessUnit: string
+  destinationBusinessUnit: string
   requestDate: string
   formIssueDate: string
   personName: string
@@ -315,6 +317,15 @@ function toCreateRequest(
   }
 
   const assets = transaction.assets ?? []
+  const goodName = assets[0]?.itemName.trim()
+  if (!goodName) {
+    return {
+      success: false,
+      error: "Pilih aset dengan nama yang valid sebelum membuat transaksi.",
+      code: "MISSING_GOOD_NAME",
+    }
+  }
+
   const items: GoodItemRequest[] = []
   for (const asset of assets) {
     const assetId = Number(asset.assetId)
@@ -349,8 +360,10 @@ function toCreateRequest(
     status: 200,
     data: {
       requestId: transaction.id,
+      goodName,
       transactionType,
       businessUnit: transaction.businessUnit,
+      destinationBusinessUnit: transaction.businessUnit,
       requestDate: dateTime(transaction.requestDate ?? transaction.date),
       formIssueDate: dateTime(transaction.formIssueDate ?? transaction.date),
       personName: transaction.party?.name ?? transaction.user,
