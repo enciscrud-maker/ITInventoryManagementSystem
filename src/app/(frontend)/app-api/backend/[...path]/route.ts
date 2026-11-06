@@ -101,7 +101,7 @@ async function proxyAuthRequest(
     (endpoint === "api/stock-audits" &&
       ["GET", "POST"].includes(request.method)) ||
     (stockAuditDetailPath.test(endpoint) &&
-      ["GET", "PUT"].includes(request.method)) ||
+      ["GET", "PUT", "DELETE"].includes(request.method)) ||
     (stockAuditItemsPath.test(endpoint) && request.method === "PUT") ||
     (stockAuditEvidenceUploadPath.test(endpoint) &&
       request.method === "POST") ||

@@ -231,8 +231,26 @@ const toAsset = (value: unknown): Asset | null => {
     updatedAt: text(
       read(value, "updatedAt", "lastUpdated", "modifiedAt", "lastUpdatedDate"),
     ),
-    po: text(read(value, "po", "poNumber", "purchaseOrder")) || undefined,
-    sap: text(read(value, "sap", "sapMaterialId", "materialId")) || undefined,
+    po:
+      text(
+        read(
+          value,
+          "po",
+          "poNumber",
+          "purchaseOrder",
+          "purchaseOrderNumber",
+        ),
+      ) || undefined,
+    sap:
+      text(
+        read(
+          value,
+          "sap",
+          "sapMaterialId",
+          "materialId",
+          "sapMaterialNumber",
+        ),
+      ) || undefined,
     value: assetValue,
     description: text(read(value, "description")) || undefined,
     demo: false,
@@ -245,12 +263,21 @@ function toAssetRequest(asset: Asset): ApiResult<AssetRequest> {
   const typeId = numericId(asset.typeId)
   const brandId = numericId(asset.brandId)
   const busUnitId = numericId(asset.businessUnitId)
-  const locationId = numericId(asset.locationId)
-  if (!catId || !groupId || !typeId || !brandId || !busUnitId || !locationId) {
+  const locationId = asset.locationId
+    ? numericId(asset.locationId)
+    : undefined
+  if (
+    !catId ||
+    !groupId ||
+    !typeId ||
+    !brandId ||
+    !busUnitId ||
+    (asset.locationId && !locationId)
+  ) {
     return {
       success: false,
       error:
-        "Backend membutuhkan ID numerik untuk klasifikasi, Business Unit, dan Location.",
+        "Backend membutuhkan ID numerik untuk klasifikasi dan Business Unit, serta Location jika diisi.",
       code: "INVALID_ASSET_REFERENCE",
     }
   }
@@ -285,7 +312,7 @@ function toAssetRequest(asset: Asset): ApiResult<AssetRequest> {
       assetValue: asset.value ?? null,
       description: asset.description ?? null,
       busUnitId,
-      locationId,
+      locationId: locationId ?? null,
       ...(conditionId ? { conditionId } : {}),
       businessUnit: asset.businessUnit,
       rowVersion: asset.rowVersion ?? null,

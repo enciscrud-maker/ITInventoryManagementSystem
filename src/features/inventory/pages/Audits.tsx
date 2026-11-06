@@ -25,6 +25,7 @@ import { useAuth } from "@/auth/AuthContext"
 import {
   canApprove,
   canCreateInModule,
+  canDelete,
   canUpdate,
 } from "@/services/authorizationService"
 
@@ -75,6 +76,8 @@ export default function Audits() {
 
     saveAudit,
 
+    deleteAudit,
+
     updateAuditItem,
 
     uploadAuditEvidence,
@@ -99,6 +102,10 @@ export default function Audits() {
   const approver = canApprove(currentUser, "stock-opname")
 
   const [selectedId, setSelectedId] = useState<string | null>(null)
+
+  const [deleteTarget, setDeleteTarget] = useState<Audit | null>(null)
+
+  const [deletingAudit, setDeletingAudit] = useState(false)
 
   const [create, setCreate] = useState(false)
 
@@ -1041,6 +1048,19 @@ export default function Audits() {
                       >
                         Open
                       </Button>
+                      {canDelete(currentUser, "stock-opname") && (
+                        <Button
+                          size="sm"
+                          variant="danger"
+                          disabled={deletingAudit}
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            setDeleteTarget(a)
+                          }}
+                        >
+                          <Trash2 size={14} /> Delete
+                        </Button>
+                      )}
                     </td>
                   </tr>
                 )
@@ -1453,6 +1473,27 @@ export default function Audits() {
           </>
         )}
       </Modal>
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        title="Delete Stock Opname session?"
+        description={
+          deleteTarget
+            ? `Delete "${deleteTarget.name}" (${deleteTarget.id}) and its audit records? The assets in Asset Inventory will not be deleted.`
+            : ""
+        }
+        confirmLabel={deletingAudit ? "Deleting..." : "Delete session"}
+        danger
+        onClose={() => {
+          if (!deletingAudit) setDeleteTarget(null)
+        }}
+        onConfirm={() => {
+          if (!deleteTarget || deletingAudit) return
+          setDeletingAudit(true)
+          void deleteAudit(deleteTarget.id).then((deleted) => {
+            if (deleted) setDeleteTarget(null)
+          }).finally(() => setDeletingAudit(false))
+        }}
+      />
     </div>
   )
 }

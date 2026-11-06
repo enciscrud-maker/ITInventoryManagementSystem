@@ -110,6 +110,7 @@ type State = {
   auditDataError: string
   refreshAudits: () => Promise<boolean>
   loadAuditDetails: (id: string) => Promise<Audit | null>
+  deleteAudit: (id: string) => Promise<boolean>
   uploadAuditEvidence: (
     auditId: string,
     assetId: string,
@@ -1095,6 +1096,37 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
     })
     notify(existing ? "Audit progress saved" : "Audit session created")
     return saved
+  }
+  const deleteAudit = async (auditId: string) => {
+    if (!canDelete(currentUser, "stock-opname")) {
+      notify("You do not have permission to delete Stock Opname sessions")
+      return false
+    }
+    const audit = findAudit(auditId)
+    if (!audit) {
+      notify("Stock Opname session was not found. Refresh the table and try again.")
+      return false
+    }
+    const result = await stockAuditsApi.delete(auditId)
+    if (!result.success) {
+      notify(result.error)
+      return false
+    }
+    commitAudits((list) => list.filter((entry) => entry.id !== auditId))
+    recordDataActivity({
+      actor: currentUser,
+      module: "Stock Opname",
+      action: "Delete",
+      recordId: audit.id,
+      recordLabel: audit.name,
+    })
+    const refreshed = await refreshAudits()
+    notify(
+      refreshed
+        ? "Stock Opname session deleted"
+        : "Stock Opname session deleted, but the table could not be refreshed",
+    )
+    return true
   }
 
   const updateAuditItem = (
@@ -2824,6 +2856,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       refreshAssets,
       refreshAudits,
       loadAuditDetails,
+      deleteAudit,
       uploadAuditEvidence,
       removeAuditEvidence,
       loadTransactionDetails,
@@ -2868,6 +2901,7 @@ export function InventoryProvider({ children }: { children: React.ReactNode }) {
       refreshAssets,
       refreshAudits,
       loadAuditDetails,
+      deleteAudit,
       uploadAuditEvidence,
       removeAuditEvidence,
       saveBusinessUnit,

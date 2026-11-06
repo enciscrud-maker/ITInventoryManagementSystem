@@ -635,13 +635,73 @@ export const stockAuditsApi = {
       }
     }
 
+    let createdAudit = toAudit(result.data, assets, locations, true)
+    const expectedAssetIds = new Set(assetIds.map(String))
+    const hasExpectedAssets = (savedAudit: Audit) =>
+      savedAudit.items.length === expectedAssetIds.size &&
+      savedAudit.items.every((item) => expectedAssetIds.has(item.assetId))
+
+    if (!hasExpectedAssets(createdAudit)) {
+      const synced = await stockAuditsApi.updateItems(
+        { ...audit, id: createdAudit.id },
+        assets,
+        locations,
+      )
+
+      if (!synced.success) {
+        return {
+          success: false,
+          error: `Audit session ${createdAudit.id} was created, but its selected assets could not be fully saved: ${synced.error}`,
+          code: synced.code,
+          status: synced.status,
+        }
+      }
+
+      createdAudit = synced.data
+
+      if (!hasExpectedAssets(createdAudit)) {
+        return {
+          success: false,
+          error: `Audit session ${createdAudit.id} was created, but the server did not save all selected assets.`,
+          code: "INCOMPLETE_AUDIT_ITEMS",
+          status: synced.status,
+        }
+      }
+    }
+
     return {
       success: true,
 
       status: result.status,
 
-      data: toAudit(result.data, assets, locations, true),
+      data: createdAudit,
     }
+  },
+
+  delete: async (id: string): Promise<ApiResult<void>> => {
+    const auditId = positiveId(id)
+
+    if (!auditId) {
+      return {
+        success: false,
+
+        error: "Stock Opname ID harus berupa bilangan bulat positif.",
+
+        code: "INVALID_AUDIT_ID",
+      }
+    }
+
+    const result = await httpRequest<unknown>(
+      `${apiRoutes.inventory.stockAudits}/${auditId}`,
+
+      { method: "DELETE" },
+
+      requestOptions,
+    )
+
+    if (!result.success) return result
+
+    return { success: true, status: result.status, data: undefined }
   },
 
   updateItems: async (
