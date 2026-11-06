@@ -47,8 +47,6 @@ import {
 
 const allColumns = [
   "Asset ID",
-  "Asset Code",
-  "Asset Prefix",
   "Serial / Tag",
   "Category",
   "Group",
@@ -64,9 +62,7 @@ const allColumns = [
   "Last Updated",
 ]
 const columnKeys: Array<keyof Asset> = [
-  "id",
   "assetCode",
-  "assetPrefix",
   "serial",
   "category",
   "group",
@@ -79,7 +75,7 @@ const columnKeys: Array<keyof Asset> = [
   "condition",
   "quantity",
   "uom",
-  "updatedAt",
+  "createdDt",
 ]
 const typedFilterFields = [
   "assetCode",
@@ -321,7 +317,7 @@ export default function AssetInventory() {
   const [filtersOpen, setFiltersOpen] = useState(true)
   const [filters, setFilters] = useState<Record<string, string>>({})
   const [sort, setSort] = useState<SortState>({
-    key: "updatedAt",
+    key: "createdDt",
     direction: -1,
   })
   const [page, setPage] = useState(1)
@@ -835,17 +831,7 @@ export default function AssetInventory() {
                     </td>
                     {isVisible("Asset ID") && (
                       <td>
-                        <code>{a.assetId ?? a.id}</code>
-                      </td>
-                    )}
-                    {isVisible("Asset Code") && (
-                      <td>
                         <code>{a.assetCode || "—"}</code>
-                      </td>
-                    )}
-                    {isVisible("Asset Prefix") && (
-                      <td>
-                        <code>{a.assetPrefix || "—"}</code>
                       </td>
                     )}
                     {isVisible("Serial / Tag") && (
@@ -884,7 +870,13 @@ export default function AssetInventory() {
                       <td className="numeric">{a.quantity}</td>
                     )}
                     {isVisible("UOM") && <td>{a.uom}</td>}
-                    {isVisible("Last Updated") && <td>{a.updatedAt}</td>}
+                    {isVisible("Last Updated") && (
+                      <td>
+                        {a.createdDt
+                          ? new Date(a.createdDt).toLocaleDateString()
+                          : "—"}
+                      </td>
+                    )}
                     <td onClick={(e) => e.stopPropagation()}>
                       {manageAllowed && (
                         <IconButton

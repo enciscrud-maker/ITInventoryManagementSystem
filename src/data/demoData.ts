@@ -31,6 +31,7 @@ export type Asset = {
   condition: string
   quantity: number
   uom: string
+  createdDt?: string
   updatedAt: string
   po?: string
   sap?: string
