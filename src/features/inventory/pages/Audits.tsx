@@ -2,7 +2,7 @@
 
 // Impact preview for the Complete dialog.
 
-import { useMemo, useState } from "react"
+import { useMemo, useState, type FormEvent } from "react"
 import {
   Plus,
   CheckCircle2,
@@ -20,7 +20,6 @@ import {
   canCreateInModule,
   canUpdate,
 } from "@/services/authorizationService"
-import type { Audit } from "@/data/demoData"
 import { downloadCsv, today } from "@/utils/helpers"
 import { getLocationsForBusinessUnit } from "@/utils/masterData"
 import { MAX_EVIDENCE_PER_ASSET, buildHistoricalMap } from "@/utils/audit"
@@ -51,7 +50,6 @@ export default function Audits() {
     businessUnit,
     refreshAudits,
     loadAuditDetails,
-    saveAudit,
     updateAuditItem,
     uploadAuditEvidence,
     removeAuditEvidence,
@@ -66,6 +64,8 @@ export default function Audits() {
   const approver = canApprove(currentUser, "stock-opname")
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [create, setCreate] = useState(false)
+  const [creationStep, setCreationStep] = useState<1 | 2>(1)
+  const [createError, setCreateError] = useState("")
   const [complete, setComplete] = useState(false)
   const [resolveOpen, setResolveOpen] = useState(false)
   const [updateLocation, setUpdateLocation] = useState(false)
@@ -73,7 +73,6 @@ export default function Audits() {
   const [importOpen, setImportOpen] = useState(false)
   const [evidenceFor, setEvidenceFor] = useState<string | null>(null)
   const [exporting, setExporting] = useState(false)
-  const [creating, setCreating] = useState(false)
   const [completing, setCompleting] = useState(false)
   const [search, setSearch] = useState("")
   const [draft, setDraft] = useState({
@@ -99,46 +98,28 @@ export default function Audits() {
           .toLowerCase()
           .includes(search.toLowerCase())),
   )
-  const createAudit = async () => {
-    const scoped = assets.filter(
-      (a) =>
-        a.businessUnitId === draft.businessUnitId &&
-        (!draft.locationId || a.locationId === draft.locationId),
-    )
-    const audit: Audit = {
-      id: "",
-      ...draft,
-      auditor: currentUser.name,
-      status: "In Progress",
-      scanLog: [],
-      items: scoped.map((a) => ({
-        assetId: a.id,
-        assetCode: a.assetCode,
-        systemQty: a.quantity,
-        systemLocation: a.location,
-        systemLocationId: a.locationId,
-        physicalQty: null,
-        actualLocation: a.location,
-        actualLocationId: a.locationId,
-        finding: "Unverified",
-        confirmed: false,
-        notes: "",
-        evidence: [],
-      })),
-    }
-    if (!scoped.length) {
-      notify("No assets match this Business Unit and Location scope")
+  const closeCreate = () => {
+    setCreate(false)
+    setCreationStep(1)
+    setCreateError("")
+  }
+  const continueToAssetSelection = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const locationIsInBusinessUnit = getLocationsForBusinessUnit(
+      master.locations,
+      draft.businessUnitId,
+    ).some((location) => location.id === draft.locationId)
+    if (
+      !draft.name.trim() ||
+      !draft.date ||
+      !draft.businessUnitId ||
+      !locationIsInBusinessUnit
+    ) {
+      setCreateError("Complete all required fields before continuing.")
       return
     }
-    setCreating(true)
-    try {
-      const saved = await saveAudit(audit)
-      if (!saved) return
-      setSelectedId(saved.id)
-      setCreate(false)
-    } finally {
-      setCreating(false)
-    }
+    setCreateError("")
+    setCreationStep(2)
   }
   const openAudit = async (id: string) => {
     const detail = await loadAuditDetails(id)
@@ -633,9 +614,11 @@ export default function Audits() {
                 date: today(),
                 businessUnit: unit?.name ?? "",
                 businessUnitId: unit?.id ?? "",
-                location: "All Locations",
+                location: "",
                 locationId: "",
               })
+              setCreationStep(1)
+              setCreateError("")
               setCreate(true)
             }}
           >
@@ -737,101 +720,174 @@ export default function Audits() {
       <Modal
         open={create}
         title="Create Audit Session"
-        description="Build a physical verification scope from current system inventory."
-        onClose={() => setCreate(false)}
+        description={
+          creationStep === 1
+            ? "Enter the information for this Stock Opname session."
+            : "Review the session information before asset selection."
+        }
+        onClose={closeCreate}
+        wide
       >
-        <div className="form-grid">
-          <Input
-            label="Session name *"
-            value={draft.name}
-            onChange={(e) => setDraft((v) => ({ ...v, name: e.target.value }))}
-          />
-          <Input
-            label="Audit date *"
-            type="date"
-            value={draft.date}
-            onChange={(e) => setDraft((v) => ({ ...v, date: e.target.value }))}
-          />
-          <Select
-            label="Business Unit *"
-            value={draft.businessUnitId}
-            onChange={(e) => {
-              const unit = master.businessUnits.find(
-                (item) => item.id === e.target.value,
-              )
-              setDraft((v) => ({
-                ...v,
-                businessUnit: unit?.name ?? "",
-                businessUnitId: unit?.id ?? "",
-                location: "All Locations",
-                locationId: "",
-              }))
-            }}
-            options={[
-              { value: "", label: "Select Business Unit" },
-              ...master.businessUnits.map((unit) => ({
-                value: unit.id,
-                label: unit.name,
-              })),
-            ]}
-          />
-          <Select
-            label="Location scope"
-            value={draft.locationId}
-            disabled={!draft.businessUnitId}
-            onChange={(e) => {
-              const location = getLocationsForBusinessUnit(
-                master.locations,
-                draft.businessUnitId,
-              ).find((item) => item.id === e.target.value)
-              setDraft((v) => ({
-                ...v,
-                location: location?.name ?? "All Locations",
-                locationId: location?.id ?? "",
-              }))
-            }}
-            options={[
-              { value: "", label: "All Locations" },
-              ...getLocationsForBusinessUnit(
-                master.locations,
-                draft.businessUnitId,
-              ).map((location) => ({
-                value: location.id,
-                label: location.name,
-              })),
-            ]}
-          />
-        </div>
-        <div className="scope-preview">
-          {
-            assets.filter(
-              (a) =>
-                a.businessUnitId === draft.businessUnitId &&
-                (!draft.locationId || a.locationId === draft.locationId),
-            ).length
-          }{" "}
-          assets will be included.
-        </div>
-        <div className="form-actions">
-          <Button variant="secondary" onClick={() => setCreate(false)}>
-            Cancel
-          </Button>
-          <Button
-            disabled={
-              !draft.name ||
-              !draft.businessUnitId ||
-              creating ||
-              !assets.some(
-                (asset) =>
-                  asset.businessUnitId === draft.businessUnitId &&
-                  (!draft.locationId || asset.locationId === draft.locationId),
-              )
-            }
-            onClick={createAudit}
+        <div className="stepper audit-create-stepper">
+          <div
+            className={creationStep === 1 ? "active" : "completed"}
+            aria-current={creationStep === 1 ? "step" : undefined}
           >
-            {creating ? "Creating..." : "Create Session"}
-          </Button>
+            <i>{creationStep === 2 ? <CheckCircle2 size={15} /> : "1"}</i>
+            <span>Session Information</span>
+          </div>
+          <div
+            className={creationStep === 2 ? "active" : ""}
+            aria-current={creationStep === 2 ? "step" : undefined}
+          >
+            <i>2</i>
+            <span>Asset Selection</span>
+          </div>
         </div>
+        {createError && (
+          <div className="error-summary audit-create-error" role="alert">
+            <strong>Please review this step</strong>
+            <span>{createError}</span>
+          </div>
+        )}
+        {creationStep === 1 ? (
+          <form
+            className="audit-session-form"
+            noValidate
+            onSubmit={continueToAssetSelection}
+          >
+            <div className="form-grid">
+              <Input
+                className="audit-session-name"
+                label="Session name *"
+                value={draft.name}
+                required
+                onChange={(e) => {
+                  setDraft((v) => ({ ...v, name: e.target.value }))
+                  setCreateError("")
+                }}
+              />
+              <Input
+                label="Audit date *"
+                type="date"
+                value={draft.date}
+                required
+                onChange={(e) => {
+                  setDraft((v) => ({ ...v, date: e.target.value }))
+                  setCreateError("")
+                }}
+              />
+              <Select
+                label="Business Unit *"
+                value={draft.businessUnitId}
+                required
+                onChange={(e) => {
+                  const unit = master.businessUnits.find(
+                    (item) => item.id === e.target.value,
+                  )
+                  setDraft((v) => ({
+                    ...v,
+                    businessUnit: unit?.name ?? "",
+                    businessUnitId: unit?.id ?? "",
+                    location: "",
+                    locationId: "",
+                  }))
+                  setCreateError("")
+                }}
+                options={[
+                  { value: "", label: "Select Business Unit" },
+                  ...master.businessUnits.map((unit) => ({
+                    value: unit.id,
+                    label: unit.name,
+                  })),
+                ]}
+              />
+              <Select
+                className="audit-location"
+                label="Location scope *"
+                value={draft.locationId}
+                required
+                disabled={!draft.businessUnitId}
+                onChange={(e) => {
+                  const location = getLocationsForBusinessUnit(
+                    master.locations,
+                    draft.businessUnitId,
+                  ).find((item) => item.id === e.target.value)
+                  setDraft((v) => ({
+                    ...v,
+                    location: location?.name ?? "",
+                    locationId: location?.id ?? "",
+                  }))
+                  setCreateError("")
+                }}
+                options={[
+                  { value: "", label: "Select Location" },
+                  ...getLocationsForBusinessUnit(
+                    master.locations,
+                    draft.businessUnitId,
+                  ).map((location) => ({
+                    value: location.id,
+                    label: location.name,
+                  })),
+                ]}
+              />
+            </div>
+            <div className="form-actions">
+              <Button type="button" variant="secondary" onClick={closeCreate}>
+                Cancel
+              </Button>
+              <Button type="submit">Next</Button>
+            </div>
+          </form>
+        ) : (
+          <>
+            <section className="audit-session-summary" aria-label="Session information">
+              <h3>Session information</h3>
+              <dl>
+                <div>
+                  <dt>Session name</dt>
+                  <dd>{draft.name}</dd>
+                </div>
+                <div>
+                  <dt>Audit date</dt>
+                  <dd>{draft.date}</dd>
+                </div>
+                <div>
+                  <dt>Business Unit</dt>
+                  <dd>{draft.businessUnit}</dd>
+                </div>
+                <div>
+                  <dt>Location scope</dt>
+                  <dd>{draft.location}</dd>
+                </div>
+              </dl>
+            </section>
+            <section className="audit-selection-placeholder" aria-label="Asset selection">
+              <ScanLine size={25} aria-hidden="true" />
+              <h3>Step 2: Asset Selection</h3>
+              <p>
+                The asset selection interface will be available in a future
+                update. Your session information is kept while you navigate
+                between steps.
+              </p>
+            </section>
+            <div className="form-actions">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => {
+                  setCreateError("")
+                  setCreationStep(1)
+                }}
+              >
+                Back
+              </Button>
+              <Button type="button" variant="secondary" onClick={closeCreate}>
+                Cancel
+              </Button>
+            </div>
+          </>
+        )}
       </Modal>
     </div>
   )
