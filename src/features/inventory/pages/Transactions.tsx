@@ -124,7 +124,7 @@ const transactionAssets = (transaction: Transaction): TransactionAssetItem[] =>
         {
           rowId: `${transaction.id}-asset-1`,
           assetId: transaction.assetId,
-          itemName: transaction.assetId,
+          itemName: "",
           quantity: transaction.quantity,
           serialNumber: "",
           referenceNumber: transaction.po ?? "",
@@ -232,17 +232,21 @@ function TransactionSummary({
             <tbody>
               {rows.map((row, index) => {
                 const asset = assets.find((item) => item.id === row.assetId)
+                const itemName =
+                  row.itemName !== row.assetId ? row.itemName : ""
                 return (
                   <tr key={row.rowId}>
                     <td>{index + 1}</td>
                     <td>
                       <strong>
-                        {row.itemName ||
+                        {itemName ||
                           (asset
                             ? `${asset.brand} ${asset.model}`
-                            : row.assetId)}
+                            : "Unknown asset")}
                       </strong>
-                      <small className="table-subline">{row.assetId}</small>
+                      <small className="table-subline">
+                        {asset?.assetCode || "—"}
+                      </small>
                     </td>
                     <td className="numeric">{row.quantity}</td>
                     {incoming ? (
@@ -1032,7 +1036,7 @@ export default function Transactions({
                                     )
                                     .map((item) => ({
                                       value: item.id,
-                                      label: `${item.id} · ${item.brand} ${item.model}`,
+                                      label: `${item.assetCode || "—"} · ${item.brand} ${item.model}`,
                                     })),
                                 ]}
                               />

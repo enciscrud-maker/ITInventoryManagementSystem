@@ -124,7 +124,7 @@ export default function Dashboard() {
             {
               rowId: `${transaction.id}-dashboard`,
               assetId: transaction.assetId,
-              itemName: transaction.assetId,
+              itemName: "",
               quantity: transaction.quantity,
             },
           ]
@@ -331,7 +331,7 @@ export default function Dashboard() {
                   >
                     <td>{asset.model}</td>
                     <td>
-                      <code>{asset.id}</code>
+                      <code>{asset.assetCode || "—"}</code>
                     </td>
                     <td>{asset.category}</td>
                     <td>{asset.brand}</td>
@@ -391,10 +391,10 @@ export default function Dashboard() {
                 </i>
                 <section>
                   <strong>
-                    {row.itemName ||
+                    {(row.itemName !== row.assetId && row.itemName) ||
                       (asset
                         ? `${asset.brand} ${asset.model}`
-                        : row.assetId)}
+                        : "Unknown asset")}
                   </strong>
                   <span>
                     {transaction.requestNumber || transaction.document} ·{" "}
@@ -449,7 +449,7 @@ export default function Dashboard() {
             <thead>
               <tr>
                 <th>Asset Name</th>
-                <th>Asset Code</th>
+                <th>Asset ID</th>
                 <th>Category</th>
                 <th>Total Qty</th>
                 <th>Available Qty</th>
@@ -469,7 +469,7 @@ export default function Dashboard() {
                   <tr key={asset.id}>
                     <td>{asset.model}</td>
                     <td>
-                      <code>{asset.id}</code>
+                      <code>{asset.assetCode || "—"}</code>
                     </td>
                     <td>{asset.category}</td>
                     <td className="numeric">{asset.quantity}</td>

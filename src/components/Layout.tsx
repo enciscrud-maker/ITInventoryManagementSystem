@@ -165,7 +165,7 @@ export function AppLayout({ children }: { children: ReactNode }) {
       .slice(0, 5)
       .map((asset) => ({
         id: asset.id,
-        title: asset.id,
+        title: asset.assetCode || "—",
         subtitle: `${asset.brand} ${asset.model}`,
         type: "asset",
       }))
@@ -177,7 +177,10 @@ export function AppLayout({ children }: { children: ReactNode }) {
       .map((transaction) => ({
         id: transaction.id,
         title: transaction.document,
-        subtitle: `${transaction.direction} · ${transaction.assetId}`,
+        subtitle: `${transaction.direction} · ${
+          assets.find((asset) => asset.id === transaction.assetId)?.assetCode ??
+          "Unknown asset"
+        }`,
         type: "transaction",
       }))
     return [...assetMatches, ...transactionMatches]

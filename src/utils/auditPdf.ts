@@ -76,7 +76,7 @@ export async function exportEvidencePdf(
 
   for (const item of rows) {
     const asset = assets.find((a) => a.id === item.assetId)
-    const title = `${item.assetId} - ${
+    const title = `${asset?.assetCode ?? item.assetCode ?? "Unknown asset"} - ${
       asset ? `${asset.brand} ${asset.model}` : "Unknown asset"
     }`
     const detail = `Finding: ${item.finding} | System qty: ${item.systemQty ?? "-"} | Physical qty: ${item.physicalQty ?? "-"} | Location: ${item.actualLocation}`

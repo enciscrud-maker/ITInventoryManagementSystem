@@ -352,21 +352,14 @@ export function AssetForm({
               onChange={(e) => set("tag", e.target.value)}
             />
             <div className="id-preview">
-              <span>Asset Code preview</span>
+              <span>Asset ID</span>
               <strong>{assetCode || "Select prefixed master data"}</strong>
-              <small>
-                The numeric asset ID is assigned by the backend after saving.
-              </small>
+              <small>Asset ID is generated when the asset is saved.</small>
             </div>
             <div className="qr-preview">
               <QrCode size={42} />
-              <span>{assetCode || assetPrefix}</span>
+              <span>{assetCode}</span>
             </div>
-            <Input
-              label="Asset Prefix *"
-              value={assetPrefix}
-              readOnly
-            />
           </div>
         </fieldset>
         <fieldset>
@@ -535,9 +528,7 @@ export function AssetDrawer() {
     [
       "Identification",
       [
-        ["Asset ID", selectedAsset.id],
-        ["Asset Code", selectedAsset.assetCode],
-        ["Asset Prefix", selectedAsset.assetPrefix],
+        ["Asset ID", selectedAsset.assetCode],
         ["Serial Number", selectedAsset.serial],
         ["Asset Tag", selectedAsset.tag],
       ],
@@ -574,7 +565,7 @@ export function AssetDrawer() {
     <>
       <Drawer
         open
-        title={selectedAsset.assetCode || selectedAsset.id}
+        title={selectedAsset.assetCode || "Asset"}
         onClose={() => setSelectedAsset(null)}
       >
         <div className="drawer-summary">

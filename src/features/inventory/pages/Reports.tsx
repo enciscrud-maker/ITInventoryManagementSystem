@@ -165,7 +165,10 @@ export default function Reports() {
     .flatMap((a) =>
       a.items.map((i) => ({
         session: a.name,
-        assetId: i.assetId,
+        assetId:
+          assets.find((asset) => asset.id === i.assetId)?.assetCode ??
+          i.assetCode ??
+          "",
         finding: i.finding,
         businessUnit: a.businessUnit,
         businessUnitId: a.businessUnitId,
@@ -184,9 +187,20 @@ export default function Reports() {
           i.locationId === filters.location ||
           i.systemLocationId === filters.location),
     )
+  const transactionRows = filteredTx.map((transaction) => ({
+    ...transaction,
+    assetId:
+      assets.find((asset) => asset.id === transaction.assetId)?.assetCode ??
+      "",
+    assets: transaction.assets?.map((row) => ({
+      ...row,
+      assetId:
+        assets.find((asset) => asset.id === row.assetId)?.assetCode ?? "",
+    })),
+  }))
   const tableRows: Record<string, unknown>[] =
     report.includes("Monthly Goods") || report === "Asset Movement History"
-      ? filteredTx
+      ? transactionRows
       : report === "Stock Opname Discrepancy Report"
         ? discrepancies
         : groups

@@ -99,9 +99,7 @@ const filterLabels: Record<string, string> = {
   model: "Model",
   serial: "Serial Number (SN)",
   tag: "Asset Tag",
-  id: "Asset ID",
-  assetCode: "Asset Code",
-  assetPrefix: "Asset Prefix",
+  assetCode: "Asset ID",
   location: "Location",
   businessUnit: "Business Unit",
   assetStatus: "Asset Status",
@@ -345,10 +343,8 @@ export default function AssetInventory() {
     "brand",
     "model",
     "assetCode",
-    "assetPrefix",
     "serial",
     "tag",
-    "id",
     "assetStatus",
     "location",
     "businessUnit",
@@ -560,6 +556,15 @@ export default function AssetInventory() {
   const validImports = importResults.flatMap((result) =>
     result.asset ? [result.asset] : [],
   )
+  const exportAssets = (rows: Asset[]) =>
+    rows.map((asset) => {
+      const fields: Record<string, unknown> = { ...asset }
+      delete fields.id
+      delete fields.assetId
+      delete fields.assetCode
+      delete fields.assetPrefix
+      return { "Asset ID": asset.assetCode ?? "", ...fields }
+    })
   const commitImport = async () => {
     if (!importFile || !importRows.length) return
     setIsImporting(true)
@@ -653,7 +658,9 @@ export default function AssetInventory() {
         </Button>
         <Button
           variant="secondary"
-          onClick={() => downloadCsv("asset-inventory.csv", filtered)}
+          onClick={() =>
+            downloadCsv("asset-inventory.csv", exportAssets(filtered))
+          }
         >
           <Download size={16} /> Export
         </Button>
@@ -736,7 +743,9 @@ export default function AssetInventory() {
                 onClick={() =>
                   downloadCsv(
                     "selected-assets.csv",
-                    assets.filter((a) => selected.includes(a.id)),
+                    exportAssets(
+                      assets.filter((a) => selected.includes(a.id)),
+                    ),
                   )
                 }
               >
@@ -816,7 +825,7 @@ export default function AssetInventory() {
                   <tr key={a.id} onClick={() => setSelectedAsset(a)}>
                     <td onClick={(e) => e.stopPropagation()}>
                       <input
-                        aria-label={`Select ${a.id}`}
+                        aria-label={`Select ${a.assetCode || "asset"}`}
                         type="checkbox"
                         checked={selected.includes(a.id)}
                         onChange={() =>
@@ -987,7 +996,6 @@ export default function AssetInventory() {
                   <thead>
                     <tr>
                       <th>Row</th>
-                      <th>Asset Prefix</th>
                       <th>Asset Name</th>
                       <th>Validation</th>
                     </tr>
@@ -997,9 +1005,6 @@ export default function AssetInventory() {
                       return (
                         <tr key={result.row}>
                           <td>{result.row}</td>
-                          <td>
-                            <code>{result.source.asset_prefix}</code>
-                          </td>
                           <td>{result.source.asset_name}</td>
                           <td>
                             {result.errors.length ? (

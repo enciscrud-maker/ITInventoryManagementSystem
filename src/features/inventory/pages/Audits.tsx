@@ -460,7 +460,7 @@ export default function Audits() {
           const asset = assets.find((a) => a.id === item.assetId)
 
           return {
-            "Asset ID": item.assetId,
+            "Asset ID": asset?.assetCode ?? item.assetCode ?? "",
 
             "Asset / Model": asset ? `${asset.brand} ${asset.model}` : "",
 
@@ -667,7 +667,7 @@ export default function Audits() {
             <table>
               <thead>
                 <tr>
-                  <th>ID Asset</th>
+                  <th>Asset ID</th>
                   <th>Asset / Model</th>
                   <th>System Location</th>
                   <th>System Qty</th>
@@ -683,6 +683,8 @@ export default function Audits() {
               <tbody>
                 {filteredItems.map((item) => {
                   const asset = assets.find((a) => a.id === item.assetId)
+                  const displayAssetId =
+                    asset?.assetCode ?? item.assetCode ?? "—"
 
                   const past = historical.get(item.assetId)
 
@@ -690,7 +692,7 @@ export default function Audits() {
 
                   const assetLabel = asset
                     ? `${asset.brand} ${asset.model}`.trim()
-                    : item.assetName || item.assetCode || item.assetId
+                    : item.assetName || "Unknown asset"
 
                   const canConfirm =
                     approver && editable && item.finding !== "Unverified"
@@ -703,10 +705,10 @@ export default function Audits() {
                             className="link-code"
                             onClick={() => setSelectedAsset(asset)}
                           >
-                            {item.assetId}
+                            {displayAssetId}
                           </button>
                         ) : (
-                          item.assetId
+                          displayAssetId
                         )}
                       </td>
                       <td>
@@ -721,7 +723,7 @@ export default function Audits() {
                       <td>
                         <input
                           className="cell-input numeric"
-                          aria-label={`Physical quantity for ${item.assetId}`}
+                          aria-label={`Physical quantity for ${displayAssetId}`}
                           type="number"
                           min="0"
                           step="1"
@@ -747,7 +749,7 @@ export default function Audits() {
                       <td>
                         <select
                           className="cell-input"
-                          aria-label={`Actual location for ${item.assetId}`}
+                          aria-label={`Actual location for ${displayAssetId}`}
                           disabled={!editable}
                           value={item.actualLocationId ?? ""}
                           onChange={(e) =>
@@ -783,7 +785,7 @@ export default function Audits() {
                       <td>
                         <input
                           type="checkbox"
-                          aria-label={`Confirm ${item.assetId}`}
+                          aria-label={`Confirm ${displayAssetId}`}
                           disabled={!canConfirm}
                           title={
                             item.confirmed
@@ -808,7 +810,7 @@ export default function Audits() {
                       <td>
                         <input
                           className="cell-input"
-                          aria-label={`Notes for ${item.assetId}`}
+                          aria-label={`Notes for ${displayAssetId}`}
                           disabled={!editable}
                           value={item.notes}
                           onChange={(e) =>
@@ -831,7 +833,7 @@ export default function Audits() {
           open={Boolean(evidenceItem)}
           title={
             evidenceAsset
-              ? `${evidenceAsset.id} · ${evidenceAsset.brand} ${evidenceAsset.model}`
+              ? `${evidenceAsset.assetCode || "Asset"} · ${evidenceAsset.brand} ${evidenceAsset.model}`
               : ""
           }
           images={evidenceItem?.evidence ?? []}
@@ -1271,7 +1273,7 @@ export default function Audits() {
                                   ...options.map((asset) => ({
                                     value: asset.id,
 
-                                    label: `${asset.assetCode ?? asset.id} · ${asset.brand} ${asset.model}`,
+                                    label: `${asset.assetCode ?? "—"} · ${asset.brand} ${asset.model}`,
                                   })),
                                 ]}
                               />
@@ -1423,7 +1425,7 @@ export default function Audits() {
                                   {asset.brand} {asset.model}
                                 </strong>
                                 <small className="table-subline">
-                                  {asset.assetCode ?? asset.id}
+                                  {asset.assetCode ?? "—"}
                                 </small>
                               </td>
                               <td className="numeric">{asset.quantity}</td>

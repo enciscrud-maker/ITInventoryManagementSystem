@@ -15,6 +15,7 @@ type RawRow = Record<string, unknown>
 type ParsedRow = {
   row: number
   assetId: string
+  displayAssetId: string
   qty: number
   error: string
 }
@@ -58,6 +59,7 @@ export function AuditImportModal({
           (item) => item.assetCode?.toLocaleUpperCase() === normalizedCode,
         )?.assetId ??
         ""
+      const matchedItem = items.find((item) => item.assetId === assetId)
       let problem = ""
       if (!idText) problem = "Asset ID is empty"
       else if (!assetId) problem = "Not part of this session"
@@ -66,6 +68,7 @@ export function AuditImportModal({
       return {
         row: index + 2,
         assetId: assetId || idText,
+        displayAssetId: matchedItem?.assetCode ?? idText,
         qty: Number.isFinite(qty) ? qty : 0,
         error: problem,
       }
@@ -126,7 +129,10 @@ export function AuditImportModal({
             onClick={() =>
               downloadCsv(
                 "stock-opname-import-template.csv",
-                items.map((item) => ({ asset_id: item.assetId, qty: "" })),
+                items.map((item) => ({
+                  asset_id: item.assetCode ?? "",
+                  qty: "",
+                })),
               )
             }
           >
@@ -166,7 +172,7 @@ export function AuditImportModal({
                     <tr key={row.row}>
                       <td>{row.row}</td>
                       <td>
-                        <code>{row.assetId}</code>
+                        <code>{row.displayAssetId}</code>
                       </td>
                       <td className="numeric">{row.qty || "-"}</td>
                       <td>
